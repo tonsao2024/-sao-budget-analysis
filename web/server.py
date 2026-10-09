@@ -37,15 +37,13 @@ for d in (_main, _comm):
     d["CROSS_FUNC?"] = d["CROSS_FUNC?"].map({"True": True, "1": True, "False": False, "0": False, "": False})
 _main["source"] = "main"
 _comm["source"] = "commitments"
-all_df = pd.concat([_main, _comm], ignore_index=True)
-main_df = _main
-
-# คอลัมน์สำหรับค้นหาแบบ full-text
+# คอลัมน์สำหรับค้นหาแบบ full-text (เติมให้ _main/_comm ก่อน concat เพื่อให้ทุก df มีใช้)
 SEARCHABLE = ["MINISTRY", "BUDGETARY_UNIT", "ITEM_DESCRIPTION", "BUDGET_PLAN",
               "OUTPUT", "PROJECT", "STRATEGY", "MOTHER_PLAN"] + CATS
-all_df["_search"] = (
-    all_df[SEARCHABLE].fillna("").agg(" ".join, axis=1).str.lower()
-)
+for d in (_main, _comm):
+    d["_search"] = d[SEARCHABLE].fillna("").agg(" ".join, axis=1).str.lower()
+all_df = pd.concat([_main, _comm], ignore_index=True)
+main_df = _main
 print(f"✅ โหลดเสร็จ: ไฟล์หลัก {len(_main):,} แถว + ภาระผูกพัน {len(_comm):,} แถว = {len(all_df):,} แถว")
 
 # ---------------------------------------------------------------- helpers

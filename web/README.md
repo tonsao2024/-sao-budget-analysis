@@ -44,7 +44,31 @@ web/
     └── fonts/         # Noto Sans/Serif Thai (woff2)
 ```
 
-## API endpoints
+## เวอร์ชัน Static (GitHub Pages)
+
+GitHub Pages รัน Python ไม่ได้ จึงมีบิลด์ static ที่คำนวณทุกอย่างในเบราว์เซอร์
+(`web/static/api.js` = data engine ฝั่ง client, logic ตรงกับ backend ผ่านเทสต์ parity 18/18):
+
+```bash
+python3 web/build_static.py   # สร้าง docs/ จาก web/static + output/*.csv.gz
+cd docs && python3 -m http.server 8000
+```
+
+- เบราว์เซอร์โหลด `.csv.gz` 2 ไฟล์ (~13.7 MB) แล้วแกะ gzip + parse เอง (PapaParse)
+- ไม่ต้องมีเซิร์ฟเวอร์ — เปิดผ่าน GitHub Pages (โฟลเดอร์ `docs/`) ได้เลย
+- ถ้าแก้ `web/static/*` แล้ว ให้รัน `build_static.py` ใหม่ทุกครั้งก่อน push
+
+## การส่งออกไฟล์ (เวอร์ชัน static)
+
+หน้า**ค้นหารายการ**มีปุ่มส่งออก 3 แบบ (สร้างไฟล์ในเบราว์เซอร์ด้วย SheetJS):
+
+| ปุ่ม | ได้อะไร |
+|---|---|
+| **CSV ที่กรอง** | ผลตามตัวกรองปัจจุบัน (สูงสุด 100,000 แถว, มี BOM เปิด Excel ได้เลย) |
+| **Excel ที่กรอง** | ผลตามตัวกรองปัจจุบันทั้งหมด (.xlsx หัวตารางภาษาไทย + ชีต "สรุป" บอกเงื่อนไข/ยอดรวม) |
+| **Excel ทั้งฐาน** | ข้อมูลทั้ง 231,221 แถว (ไฟล์หลัก + ภาระผูกพัน) — ไฟล์ใหญ่ อาจใช้เวลา 1–2 นาที |
+
+## API endpoints (เวอร์ชัน FastAPI)
 
 `GET /api/meta` · `/api/overview?year=` · `/api/search?...` · `/api/export?...` (CSV) ·
 `/api/ministries?year=` · `/api/ministry?name=&year=` · `/api/compare?names=` ·
