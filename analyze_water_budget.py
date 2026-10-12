@@ -222,6 +222,11 @@ def thb(v):
     return f"{v:,.0f} บาท"
 
 
+def rank_key(total, name):
+    """คีย์เรียงลำดับ: ยอดรวมมาก→น้อย แล้วเรียงตามชื่อเพื่อให้ผลคงที่ทุกการรัน"""
+    return (-total, str(name))
+
+
 def main():
     os.makedirs(OUTDIR, exist_ok=True)
     os.makedirs(DOCSDATA, exist_ok=True)
@@ -230,6 +235,8 @@ def main():
     scope_plan = defaultdict(float)        # (scope, plan, year) -> amount
     scope_year = defaultdict(float)
     plan_year = defaultdict(float)         # (plan, year) - เฉพาะ scope A
+    plan_year_all = defaultdict(float)     # (plan, year) - ทุกขอบเขต (A+B1+B2+B3)
+    plan_scopes = defaultdict(set)         # แผนงาน -> {ขอบเขตที่พบในแผนงานนั้น}
     min_year = defaultdict(float)          # (ministry, year) - scope A+B
     min_scope = defaultdict(float)
     unit_year = defaultdict(float)
@@ -268,6 +275,9 @@ def main():
         if scope == "A":
             plan_year[(out["BUDGET_PLAN"], y)] += amt
             matched_plans[out["BUDGET_PLAN"]] += 1
+        pl = out["BUDGET_PLAN"] or "(ไม่ระบุแผนงาน)"
+        plan_year_all[(pl, y)] += amt
+        plan_scopes[pl].add(scope)
 
     # ภาระผูกพันปีนอกช่วง (ไฟล์ commitments) ในขอบเขตน้ำ
     for row in read_rows(COMM):
@@ -304,15 +314,26 @@ def main():
     def row_of(getter, keys):
         return [getter(k) for k in keys]
 
-    # 1) แผนงาน × ปี (scope A) — เรียงจากยอดรวมมากไปน้อย
-    order = sorted(plans, key=lambda p: -sum(plan_year[(p, y)] for y in YEARS))
+    # 1) แผนงาน × ปี (ทุกขอบเขต A+B1+B2+B3) — ให้ยอดรวมเท่ากับตารางสรุปอื่น ๆ
+    order = sorted({p for (p, y) in plan_year_all},
+                   key=lambda p: rank_key(sum(plan_year_all.get((p, y), 0) for y in YEARS), p))
     rows = []
     for p in order:
-        r = [p, sum(a for (pp, y), a in plan_year.items() if pp == p)]
-        r += [plan_year.get((p, y), 0) for y in YEARS]
+        r = [p]
+        r += [plan_year_all.get((p, y), 0) for y in YEARS]
+        r.append(sum(plan_year_all.get((p, y), 0) for y in YEARS))
+        r.append("+".join(sorted(plan_scopes.get(p, set()))) or "-")
         rows.append(r)
     write_plain_csv(os.path.join(OUTDIR, "summary_plan_year.csv"),
-                    ["แผนงาน"] + [f"ปี {y} (บาท)" for y in YEARS] + ["รวม (บาท)"], rows)
+                    ["แผนงาน"] + [f"ปี {y} (บาท)" for y in YEARS] + ["รวม (บาท)", "ขอบเขตที่พบ"], rows)
+    rows_a = []
+    for p in sorted(plans, key=lambda p: rank_key(sum(plan_year.get((p, y), 0) for y in YEARS), p)):
+        r = [p]
+        r += [plan_year.get((p, y), 0) for y in YEARS]
+        r.append(sum(plan_year.get((p, y), 0) for y in YEARS))
+        rows_a.append(r)
+    write_plain_csv(os.path.join(OUTDIR, "summary_plan_year_scopeA.csv"),
+                    ["แผนงาน (ขอบเขต A)"] + [f"ปี {y} (บาท)" for y in YEARS] + ["รวม (บาท)"], rows_a)
 
     # 2) ขอบเขต × ปี
     rows = []
@@ -329,8 +350,8 @@ def main():
                     ["ขอบเขต"] + [f"ปี {y} (บาท)" for y in YEARS] + ["รวม (บาท)"], rows)
 
     # 3) กระทรวง × ปี
-    mins = sorted({m for (m, y) in min_year}, key=lambda m: -sum(
-        a for (mm, y), a in min_year.items() if mm == m))
+    mins = sorted({m for (m, y) in min_year}, key=lambda m: rank_key(sum(
+        a for (mm, y), a in min_year.items() if mm == m), m))
     rows = []
     for m in mins:
         r = [m] + [min_year.get((m, y), 0) for y in YEARS]
@@ -340,8 +361,8 @@ def main():
                     ["กระทรวง"] + [f"ปี {y} (บาท)" for y in YEARS] + ["รวม (บาท)"], rows)
 
     # 4) หน่วยงาน × ปี
-    units = sorted({u for (u, y) in unit_year}, key=lambda u: -sum(
-        a for (uu, y), a in unit_year.items() if uu == u))
+    units = sorted({u for (u, y) in unit_year}, key=lambda u: rank_key(sum(
+        a for (uu, y), a in unit_year.items() if uu == u), u))
     rows = []
     for u in units:
         r = [u] + [unit_year.get((u, y), 0) for y in YEARS]
@@ -351,8 +372,8 @@ def main():
                     ["หน่วยงาน"] + [f"ปี {y} (บาท)" for y in YEARS] + ["รวม (บาท)"], rows)
 
     # 5) โครงการ × ปี (เฉพาะโครงการที่มียอดรวม >= 100 ลบ.)
-    projs = sorted({p for (p, y) in proj_year}, key=lambda p: -sum(
-        a for (pp, y), a in proj_year.items() if pp == p))
+    projs = sorted({p for (p, y) in proj_year}, key=lambda p: rank_key(sum(
+        a for (pp, y), a in proj_year.items() if pp == p), p))
     rows = []
     for p in projs:
         tot = sum(a for (pp, y), a in proj_year.items() if pp == p)
@@ -365,8 +386,8 @@ def main():
                     ["โครงการ"] + [f"ปี {y} (บาท)" for y in YEARS] + ["รวม (บาท)"], rows)
 
     # 6) หมวดงบ × ปี
-    cats = sorted({c for (c, y) in cat_year}, key=lambda c: -sum(
-        a for (cc, y), a in cat_year.items() if cc == c))
+    cats = sorted({c for (c, y) in cat_year}, key=lambda c: rank_key(sum(
+        a for (cc, y), a in cat_year.items() if cc == c), c))
     rows = []
     for c in cats:
         r = [c] + [cat_year.get((c, y), 0) for y in YEARS]
@@ -378,7 +399,7 @@ def main():
     # ---------------- Excel
     write_xlsx(os.path.join(OUTDIR, "water_budget_2566-2569.xlsx"),
                detail_annual, detail_obliged, plan_year, scope_year, min_year, unit_year,
-               proj_year, cat_year, YEARS)
+               proj_year, cat_year, YEARS, plan_year_all, plan_scopes)
     # คัดลอกไฟล์ Excel (สร้างเสร็จแล้ว) ไปให้หน้าเว็บดาวน์โหลด
     try:
         with open(os.path.join(OUTDIR, "water_budget_2566-2569.xlsx"), "rb") as src, \
@@ -411,8 +432,10 @@ def main():
 
 
 def write_xlsx(path, detail_annual, detail_obliged, plan_year, scope_year, min_year, unit_year,
-               proj_year, cat_year, years):
+               proj_year, cat_year, years, plan_year_all=None, plan_scopes=None):
     """สร้างสมุดงาน Excel สำหรับส่งมอบ (หัวตารางภาษาไทย + ชีตแยกขอบเขต + ตัวกรอง + แผนภูมิ)"""
+    plan_year_all = plan_year_all or defaultdict(float)
+    plan_scopes = plan_scopes or defaultdict(set)
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment
@@ -538,7 +561,7 @@ def write_xlsx(path, detail_annual, detail_obliged, plan_year, scope_year, min_y
         ("B", "สารบัญชีต"),
         ("", "1. อ่านก่อน — คำอธิบาย นิยาม และข้อควรระวัง (ชีตนี้)"),
         ("", "2. สรุปขอบเขต-ปี — งบงานน้ำรายปี แยกขอบเขต A/B1/B2/B3 + สัดส่วน + แผนภูมิ"),
-        ("", "3. แผนงาน-ปี — เฉพาะ 3 แผนงานด้านทรัพยากรน้ำ (ขอบเขต A)"),
+        ("", "3. แผนงาน-ปี — ทุกแผนงานที่มีรายการน้ำ (A+B1+B2+B3) + ยอดเฉพาะ 3 แผนงานน้ำ (ขอบเขต A)"),
         ("", "4. กระทรวง-ปี — งานน้ำทั้งระบบแยกตามกระทรวง (A+B)"),
         ("", "5. หน่วยงาน-ปี — งานน้ำทั้งระบบแยกตามหน่วยงาน (A+B) + แผนภูมิ 15 อันดับ"),
         ("", "6. โครงการ-ปี — ทุกโครงการที่มีงานน้ำ (A+B)"),
@@ -591,7 +614,8 @@ def write_xlsx(path, detail_annual, detail_obliged, plan_year, scope_year, min_y
     ws.add_chart(ch, f"A{len(SCOPES) + 6}")
 
     def sum_sheet(title, key, label, width, chart_top=0):
-        keys = sorted({k for (k, y) in key}, key=lambda k: -sum(key.get((k, y), 0) for y in years))
+        keys = sorted({k for (k, y) in key},
+                      key=lambda k: rank_key(sum(key.get((k, y), 0) for y in years), k))
         ws_x = add_sheet(title, [label] + [ylabel[y] for y in years] + ["รวม 4 ปี (บาท)"],
                          [[k] + [to_num(key.get((k, y), 0)) for y in years]
                           + [to_num(sum(key.get((k, y), 0) for y in years))] for k in keys],
@@ -615,7 +639,48 @@ def write_xlsx(path, detail_annual, detail_obliged, plan_year, scope_year, min_y
             ws_x.add_chart(c2, f"A{len(keys) + 4}")
         return ws_x
 
-    sum_sheet("แผนงาน-ปี", plan_year, "แผนงาน (ขอบเขต A)", 62)
+    # 3) แผนงาน-ปี — ทุกแผนงานที่มีรายการน้ำ (A+B1+B2+B3) เพื่อให้ยอดรวมกระทบกับชีทสรุปอื่น ๆ
+    plan_keys = sorted({p for (p, y) in plan_year_all},
+                       key=lambda p: rank_key(sum(plan_year_all.get((p, y), 0) for y in years), p))
+    ws_plan = add_sheet(
+        "แผนงาน-ปี",
+        ["แผนงาน (ทุกขอบเขต A+B1+B2+B3)"] + [ylabel[y] for y in years]
+        + ["รวม 4 ปี (บาท)", "ขอบเขตที่พบ"],
+        [[p] + [to_num(plan_year_all.get((p, y), 0)) for y in years]
+         + [to_num(sum(plan_year_all.get((p, y), 0) for y in years)),
+            "+".join(sorted(plan_scopes.get(p, set()))) or "-"] for p in plan_keys],
+        widths=[64] + [17] * len(years) + [20, 14],
+        money_cols=list(range(2, len(years) + 3)),
+        year_cols=list(range(2, len(years) + 2)),
+        data_bar_cols=[len(years) + 2],
+        total_row=[f"รวมทั้งหมด {len(plan_keys)} แผนงาน (A+B1+B2+B3)"]
+                  + [to_num(sum(plan_year_all.get((p, y), 0) for p in plan_keys)) for y in years]
+                  + [to_num(sum(plan_year_all.values()))])
+    rr = ws_plan.max_row + 2
+    for txt in [
+        f"กระทบยอด: ยอดรวมของชีทนี้ = {sum(plan_year_all.values()):,.0f} บาท — เท่ากับชีท “สรุปขอบเขต-ปี” "
+        f"· “กระทรวง-ปี” · “หน่วยงาน-ปี” · “โครงการ-ปี” · “หมวดงบ-ปี” และ “รายละเอียดงบรายปี” "
+        f"({len(detail_annual):,} รายการ) เพราะทุกชีทแบ่งจากรายการชุดเดียวกัน",
+        f"เฉพาะ 3 แผนงานด้านทรัพยากรน้ำ (ขอบเขต A) = {sum(plan_year.values()):,.0f} บาท "
+        f"({sum(plan_year.values()) / grants:.1%} ของงานน้ำทั้งระบบ)",
+        "อีก 21 แผนงานเป็นที่มาของรายการน้ำ “นอกแผนน้ำ” (ขอบเขต B1/B2/B3) เช่น แผนงานบุคลากรภาครัฐ · "
+        "แผนงานพื้นฐานด้านการสร้างการเติบโตบนคุณภาพชีวิตฯ · แผนงานยุทธศาสตร์เพื่อสนับสนุนด้านการสร้าง"
+        "การเติบโตฯ — ดูเกณฑ์ในชีท “อ่านก่อน” และชีท “สรุปขอบเขต-ปี”",
+        "คอลัมน์ “ขอบเขตที่พบ” ระบุว่ารายการน้ำในแผนงานนั้นถูกจัดเป็นขอบเขตใด (A / B1 / B2 / B3)",
+    ]:
+        ws_plan.cell(row=rr, column=1, value=txt).font = NOTE_FONT
+        ws_plan.cell(row=rr, column=1).alignment = Alignment(wrap_text=True, vertical="top")
+        rr += 1
+    n12 = min(12, len(plan_keys))
+    ch_plan = BarChart()
+    ch_plan.type = "bar"
+    ch_plan.title = f"แผนงาน — {n12} อันดับแรก (รวม 4 ปี, บาท)"
+    ch_plan.add_data(Reference(ws_plan, min_col=len(years) + 2, min_row=1, max_row=1 + n12),
+                     titles_from_data=True)
+    ch_plan.set_categories(Reference(ws_plan, min_col=1, min_row=2, max_row=1 + n12))
+    ch_plan.height, ch_plan.width = max(7, 0.45 * n12 + 4), 18
+    ch_plan.legend = None
+    ws_plan.add_chart(ch_plan, f"A{len(plan_keys) + 8}")
     sum_sheet("กระทรวง-ปี", min_year, "กระทรวง", 40)
     sum_sheet("หน่วยงาน-ปี", unit_year, "หน่วยงาน", 44, chart_top=15)
     sum_sheet("โครงการ-ปี", proj_year, "โครงการ", 74, chart_top=15)
@@ -662,6 +727,22 @@ def write_xlsx(path, detail_annual, detail_obliged, plan_year, scope_year, min_y
                                     "ห้ามนำยอดนี้ไปรวมกับงบประมาณรายจ่ายรายปี").font = Font(
         bold=True, color="C00000", size=11)
 
+    # --- ตรวจกระทบยอด: ชีทสรุปทุกชีทต้องรวมได้เท่ากับยอดรวมทั้งระบบ (รายการชุดเดียวกัน)
+    grand = sum(scope_year.values())
+    recon = [
+        ("สรุปขอบเขต-ปี", sum(scope_year.values())),
+        ("แผนงาน-ปี", sum(plan_year_all.values())),
+        ("กระทรวง-ปี", sum(min_year.values())),
+        ("หน่วยงาน-ปี", sum(unit_year.values())),
+        ("โครงการ-ปี", sum(proj_year.values())),
+        ("หมวดงบ-ปี", sum(cat_year.values())),
+        ("รายละเอียดงบรายปี", sum(amount_of(r) for r in detail_annual)),
+    ]
+    diff = [(n, v) for n, v in recon if v != grand]
+    print("  ตรวจกระทบยอดชีทสรุปทุกชีท:", f"เท่ากันที่ {grand:,.0f} บาท" if not diff
+          else "!! ไม่ตรง: " + ", ".join(f"{n}={v:,}" for n, v in diff))
+    assert not diff, diff
+
     wb.save(path)
     print(f"  → {os.path.relpath(path, ROOT)} ({len(wb.sheetnames)} ชีต: {', '.join(wb.sheetnames)})")
 
@@ -690,7 +771,7 @@ def write_md_tables(path, detail_annual, detail_obliged, plan_year, scope_year, 
 
     A("\n## 2) แผนงานด้านทรัพยากรน้ำ × ปีงบประมาณ (บาท)\n")
     plans = sorted({p for (p, y) in plan_year},
-                   key=lambda p: -sum(plan_year.get((p, y), 0) for y in years))
+                   key=lambda p: rank_key(sum(plan_year.get((p, y), 0) for y in years), p))
     rows = []
     for p in plans:
         rows.append([p] + [f"{plan_year.get((p, y), 0):,.0f}" for y in years]
@@ -699,21 +780,21 @@ def write_md_tables(path, detail_annual, detail_obliged, plan_year, scope_year, 
 
     A("\n## 3) กระทรวง × ปีงบประมาณ (บาท)\n")
     mins = sorted({m for (m, y) in min_year},
-                  key=lambda m: -sum(a for (mm, y), a in min_year.items() if mm == m))
+                  key=lambda m: rank_key(sum(a for (mm, y), a in min_year.items() if mm == m), m))
     rows = [[m] + [f"{min_year.get((m, y), 0):,.0f}" for y in years]
             + [f"{sum(min_year.get((m, y), 0) for y in years):,.0f}"] for m in mins]
     table(["กระทรวง"] + [f"ปี {y}" for y in years] + ["รวม"], rows)
 
     A("\n## 4) หน่วยงาน × ปีงบประมาณ (บาท)\n")
     units = sorted({u for (u, y) in unit_year},
-                   key=lambda u: -sum(a for (uu, y), a in unit_year.items() if uu == u))
+                   key=lambda u: rank_key(sum(a for (uu, y), a in unit_year.items() if uu == u), u))
     rows = [[u] + [f"{unit_year.get((u, y), 0):,.0f}" for y in years]
             + [f"{sum(unit_year.get((u, y), 0) for y in years):,.0f}"] for u in units]
     table(["หน่วยงาน"] + [f"ปี {y}" for y in years] + ["รวม"], rows)
 
     A("\n## 5) โครงการ (ยอดรวม ≥ 100 ล้านบาท) × ปีงบประมาณ (บาท)\n")
     projs = sorted({p for (p, y) in proj_year},
-                   key=lambda p: -sum(a for (pp, y), a in proj_year.items() if pp == p))
+                   key=lambda p: rank_key(sum(a for (pp, y), a in proj_year.items() if pp == p), p))
     rows = []
     for p in projs:
         tot = sum(a for (pp, y), a in proj_year.items() if pp == p)
@@ -724,7 +805,7 @@ def write_md_tables(path, detail_annual, detail_obliged, plan_year, scope_year, 
 
     A("\n## 6) หมวดงบ (CATEGORY_LV1) × ปีงบประมาณ (บาท)\n")
     cats = sorted({c for (c, y) in cat_year},
-                  key=lambda c: -sum(a for (cc, y), a in cat_year.items() if cc == c))
+                  key=lambda c: rank_key(sum(a for (cc, y), a in cat_year.items() if cc == c), c))
     rows = [[c] + [f"{cat_year.get((c, y), 0):,.0f}" for y in years]
             + [f"{sum(cat_year.get((c, y), 0) for y in years):,.0f}"] for c in cats]
     table(["หมวดงบ"] + [f"ปี {y}" for y in years] + ["รวม"], rows)
