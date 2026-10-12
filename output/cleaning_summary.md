@@ -2,9 +2,10 @@
 
 - วันที่: 2026-10-09
 - Input: `budget_2566-2569.csv.gz` (231,334 แถว)
-- Output หลัก: `budget_2566-2569_clean.csv.gz` (210,895 แถว, ปี 2022-2026)
-- ภาระผูกพัน: `budget_2566-2569_commitments.csv.gz` (20,326 แถว)
+- Output หลัก: `budget_2566-2569_clean.csv.gz` (210,894 แถว, ปี 2022-2026)
+- ภาระผูกพัน: `budget_2566-2569_commitments.csv.gz` (20,325 แถว)
 - Quarantine: `quarantine_review.csv.gz` (240 แถว)
+- รายงานรายคอลัมน์ (รอบ 2): `column_clean_audit.md`, `variant_map.csv`, `variant_review_checklist.md`
 
 ## สิ่งที่ทำ
 
@@ -26,7 +27,6 @@
   split sara-am w/ mai-tho (ซ ้า->ซ้ำ): 128 cells
   split sara-am w/ mai-ek (ก ่า->ก่ำ): 69 cells
   split sara-am (ก าลัง->กำลัง): 1,356 cells
-  sara-am+stray mai-tho (นำ้->น้ำ): 679 cells
 
 ### ขั้น 1c: substring rules (คำสะกดผิดบางส่วน) ###
   ใช้ 84 rules
@@ -34,23 +34,101 @@
 
   เติม ')' ท้าย BUDGETARY_UNIT: 706 cells
 
+### ขั้น 1f: ล้าง artifact ระดับตัวอักษร (ทุกคอลัมน์ข้อความ) ###
+  BUDGETARY_UNIT: แก้ 680 cell
+  OUTPUT: แก้ 143 cell
+  PROJECT: แก้ 592 cell
+  CATEGORY_LV2: แก้ 23 cell
+  CATEGORY_LV3: แก้ 43 cell
+  CATEGORY_LV4: แก้ 1,083 cell
+  CATEGORY_LV5: แก้ 110 cell
+  CATEGORY_LV6: แก้ 19 cell
+  ITEM_DESCRIPTION: แก้ 6,153 cell
+  [CATEGORY_LV4] ก่อสร้ง -> ก่อสร้าง: 20 cell
+  [ITEM_DESCRIPTION] ก่อสร้ง -> ก่อสร้าง: 702 cell
+  [CATEGORY_LV4] สิงก่อสร้าง -> สิ่งก่อสร้าง: 9 cell
+  [CATEGORY_LV5] สิงก่อสร้าง -> สิ่งก่อสร้าง: 1 cell
+  [ITEM_DESCRIPTION] สิงก่อสร้าง -> สิ่งก่อสร้าง: 465 cell
+  [ITEM_DESCRIPTION] อาดาร -> อาคาร: 1 cell
+  [ITEM_DESCRIPTION] ชชี -> ซีซี: 8 cell
+  [ITEM_DESCRIPTION] ไมต่ำกว่า -> ไม่ต่ำกว่า: 375 cell
+  [ITEM_DESCRIPTION] ดีเชล -> ดีเซล: 56 cell
+  [ITEM_DESCRIPTION] เดีเซล -> ดีเซล: 292 cell
+  [ITEM_DESCRIPTION] Mhz -> MHz: 61 cell
+  [CATEGORY_LV5] สัตทึบ -> สัตหีบ: 3 cell
+  [ITEM_DESCRIPTION] สัตทึบ -> สัตหีบ: 19 cell
+  [CATEGORY_LV5] ช่อมสร้าง -> ซ่อมสร้าง: 1 cell
+  [ITEM_DESCRIPTION] ช่อมสร้าง -> ซ่อมสร้าง: 52 cell
+  [ITEM_DESCRIPTION] จังหวัดนาน -> จังหวัดน่าน: 48 cell
+  [CATEGORY_LV3] การสัมมนาและการฝึกอบรม -> การสัมมนาและฝึกอบรม: 2 cell
+  [ITEM_DESCRIPTION] การสัมมนาและการฝึกอบรม -> การสัมมนาและฝึกอบรม: 2 cell
+  [ITEM_DESCRIPTION] สัตหึบ -> สัตหีบ: 26 cell
+  [CATEGORY_LV5] บาทรวม -> บาท รวม: 7 cell
+  [ITEM_DESCRIPTION] บาทรวม -> บาท รวม: 832 cell
+  [ITEM_DESCRIPTION] และอาคารประกอบพร้อม -> และอาคารประกอบ พร้อม: 180 cell
+  [ITEM_DESCRIPTION] พร้อมอาคารประกอบจังหวัด -> พร้อมอาคารประกอบ จังหวัด: 17 cell
+  [ITEM_DESCRIPTION] พร้อมส่วนประกอบอื่นอุโมงค์ -> พร้อมส่วนประกอบอื่น อุโมงค์: 52 cell
+  [OUTPUT] เผยแพร่สูสาธารณะ -> เผยแพร่สู่สาธารณะ: 96 cell
+  [OUTPUT] อย่างยังยืน -> อย่างยั่งยืน: 97 cell
+  [ITEM_DESCRIPTION] อย่างยังยืน -> อย่างยั่งยืน: 16 cell
+  [OUTPUT] พาณชย์ -> พาณิชย์: 68 cell
+  [OUTPUT] การรวมลงทุน -> การร่วมลงทุน: 34 cell
+  [OUTPUT] ความเชื่อมัน -> ความเชื่อมั่น: 35 cell
+  [PROJECT] ความเชื่อมัน -> ความเชื่อมั่น: 5 cell
+  [OUTPUT] ต่อยอดสูกีฬา -> ต่อยอดสู่กีฬา: 13 cell
+  [ITEM_DESCRIPTION] หล่อลิ่น -> หล่อลื่น: 14 cell
+  [ITEM_DESCRIPTION] ชวงที่ -> ช่วงที่: 10 cell
+  [ITEM_DESCRIPTION] 1o ล้านบาท -> 10 ล้านบาท: 36 cell
+  [ITEM_DESCRIPTION] regex ต่ำกว่า\s+[1a]\s+10\s+ล้านบาท: 162 cell
+  [CATEGORY_LV4] regex (?<=\d)\s*ค้น\b: 86 cell
+  [ITEM_DESCRIPTION] regex (?<=\d)\s*ค้น\b: 755 cell
+  [OUTPUT] regex ฺ(?=[^ว]): 8 cell
+  [CATEGORY_LV5] regex ฺ(?=[^ว]): 101 cell
+  [ITEM_DESCRIPTION] regex ฺ(?=[^ว]): 3,478 cell
+  [PROJECT] regex \s+บาท$: 13 cell
+  [ITEM_DESCRIPTION] regex \s+บาท$: 1,443 cell
+  [ITEM_DESCRIPTION] regex (?<=\d)\.$: 9 cell
+  [PROJECT] regex \)(?=[\u0e01-\u0e39]): 21 cell
+  [CATEGORY_LV5] regex \)(?=[\u0e01-\u0e39]): 6 cell
+  [ITEM_DESCRIPTION] regex \)(?=[\u0e01-\u0e39]): 910 cell
+  [ITEM_DESCRIPTION] regex (?<=[\u0e01-\u0e39])(\d+(?:,\d{3})*)(?=\s(?:คัน|ลำ|แห่ง|หลัง|งาน|รายการ|ชุด|ระบบ|ตัว|เครื่อง|โซน|ธันวาคม|ตารางเมตร|ที่)): 2,148 cell
+
+### ขั้น 1g: รวมค่าเดียวกันที่สะกดต่าง (รายคอลัมน์) ###
+  BUDGETARY_UNIT: 38 คู่ mapping
+  CATEGORY_LV2: 4 คู่ mapping
+  CATEGORY_LV3: 14 คู่ mapping
+  CATEGORY_LV4: 5 คู่ mapping
+  CATEGORY_LV5: 1 คู่ mapping
+  MOTHER_PLAN: 1 คู่ mapping
+  ITEM_DESCRIPTION: 1 คู่ mapping
+
+  -- auto-merge ค่าที่ต่างกันแค่ช่องว่าง/เครื่องหมายวรรคตอน --
+  MINISTRY: รวม 1,263 cell
+  BUDGETARY_UNIT: รวม 5 cell
+  OUTPUT: รวม 4,662 cell
+  PROJECT: รวม 272 cell
+  CATEGORY_LV3: รวม 41 cell
+  CATEGORY_LV4: รวม 108 cell
+  CATEGORY_LV5: รวม 33 cell
+  CATEGORY_LV6: รวม 49 cell
+
 ### ขั้น 2: รวมชื่อ MINISTRY ที่สะกดหลายแบบ ###
   อปท  ->  องค์กรปกครองส่วนท้องถิ่น  (11,754 แถว)
-  ส่วนราชการไม่สังกัดสำนักนายกรัฐมนตรี กระทรวง หรือทบวงและหน่วยงานภายใต้การควบคุมดูแลของนายกรัฐมนตรี  ->  ส่วนราชการไม่สังกัดสำนักนายกรัฐมนตรี กระทรวง หรือทบวง และหน่วยงานภายใต้การควบคุมดูแลของนายกรัฐมนตรี  (1,263 แถว)
+  ส่วนราชการไม่สังกัดสำนักนายกรัฐมนตรี กระทรวง หรือทบวงและหน่วยงานภายใต้การควบคุมดูแลของนายกรัฐมนตรี  ->  ส่วนราชการไม่สังกัดสำนักนายกรัฐมนตรี กระทรวง หรือทบวง และหน่วยงานภายใต้การควบคุมดูแลของนายกรัฐมนตรี  (0 แถว)
   ส่วนราชการไม่สังกัดสำนักนายกรัฐมนตรีฯ  ->  ส่วนราชการไม่สังกัดสำนักนายกรัฐมนตรี กระทรวง หรือทบวง และหน่วยงานภายใต้การควบคุมดูแลของนายกรัฐมนตรี  (1,325 แถว)
   งบประมาณรายจ่ายเพื่อชดใช้เงินคงคลัง  ->  รายจ่ายเพื่อชดใช้เงินคงคลัง  (1 แถว)
-  MINISTRY ไม่ซ้ำ: ก่อน 39 -> หลัง 35
+  MINISTRY ไม่ซ้ำ: ก่อน 38 -> หลัง 35
 
 ### ขั้น 3: แก้ CATEGORY_LV1 (คอลัมน์เลื่อน/ว่าง) ###
   คอลัมน์เลื่อน (มีชื่อแผนงานในช่องหมวดงบ): 12 แถว -> เติมจากปีอื่นได้ 0 แถว, เหลือว่าง 12 แถว
   CATEGORY_LV1 ว่าง: 84 แถว -> เติมจากปีอื่นได้ 4 แถว, เหลือว่าง 80 แถว
 
 ### ขั้น 4: ลบแถวซ้ำซ้อน ###
-  ลบแถวซ้ำ: 113 แถว -> เหลือ 231,221 แถว
+  ลบแถวซ้ำ: 115 แถว -> เหลือ 231,219 แถว
 
 ### ขั้น 5-6: flag / เติมค่า / แยกภาระผูกพัน / แปลงชนิดข้อมูล ###
-  ไฟล์หลัก (ปี 2022-2026): 210,895 แถว
-  ภาระผูกพัน (ปีนอกช่วง): 20,326 แถว (ปี <=2021 น่าสงสัย: 9,058 แถว, ปี <=2005 เป็นไปไม่ได้: 156 แถว)
+  ไฟล์หลัก (ปี 2022-2026): 210,894 แถว
+  ภาระผูกพัน (ปีนอกช่วง): 20,325 แถว (ปี <=2021 น่าสงสัย: 9,058 แถว, ปี <=2005 เป็นไปไม่ได้: 156 แถว)
 
 ### เขียนไฟล์ output ###
   output/budget_2566-2569_clean.csv.gz
@@ -62,9 +140,15 @@
   ปี 2023: ดิบ 3,447.09B -> clean 3,446.91B (ต่าง -183.9M จากการลบซ้ำ)
   ปี 2024: ดิบ 3,942.26B -> clean 3,942.26B (ต่าง -3.9M จากการลบซ้ำ)
   ปี 2025: ดิบ 4,304.96B -> clean 4,304.91B (ต่าง -46.7M จากการลบซ้ำ)
-  ปี 2026: ดิบ 4,295.01B -> clean 4,294.97B (ต่าง -37.1M จากการลบซ้ำ)
+  ปี 2026: ดิบ 4,295.01B -> clean 4,294.97B (ต่าง -38.0M จากการลบซ้ำ)
   รวมทุกปีไฟล์หลัก: 16,302.10B
   รวมภาระผูกพัน: 6,294.80B
+
+### เขียนรายงานรายคอลัมน์ ###
+  output/column_clean_audit.md
+  output/variant_map.csv
+  output/variant_review_checklist.md
+  output/suspicious_remaining.md
 
 ## ตาราง audit การแก้สะกด
 
@@ -82,7 +166,6 @@
 | artifact | ALL | split sara-am w/ mai-tho (ซ ้า->ซ้ำ) | 128 |
 | artifact | ALL | split sara-am w/ mai-ek (ก ่า->ก่ำ) | 69 |
 | artifact | ALL | split sara-am (ก าลัง->กำลัง) | 1,356 |
-| artifact | ALL | sara-am+stray mai-tho (นำ้->น้ำ) | 679 |
 | substring | ALL | ไชเบอร์ -> ไซเบอร์ | 28 |
 | substring | ALL | ขึดความสามารถ -> ขีดความสามารถ | 49 |
 | substring | ALL | เบิ้ลแค็บ -> เบิ้ลแคบ | 1,712 |
@@ -180,10 +263,11 @@
 | budget_plan_missing | - | 48 |
 | cross_func_filled | - | 130 |
 | ref_page_no_invalid | - | 1 |
-| commitment_year_outside_range | - | 20,326 |
+| commitment_year_outside_range | - | 20,325 |
 | commitment_year_suspect_past | - | 9,058 |
 | commitment_year_impossible | - | 156 |
 | ministry_inferred | - | 0 |
+| unit_inferred | - | 0 |
 | category_lv1_unresolved | - | 80 |
 
 ## สิ่งที่ยังไม่แก้ (เหลือเช็คกับต้นฉบับ)
