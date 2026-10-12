@@ -30,6 +30,7 @@ analyze_water_budget.py — วิเคราะห์งบประมาณ�
 """
 
 import csv
+import io
 import gzip
 import os
 import re
@@ -191,7 +192,10 @@ def amount_of(row):
 
 
 def write_csv(path, cols, rows):
-    with gzip.open(path, "wt", encoding="utf-8", newline="") as fh:
+    # mtime=0 + ไม่ฝังชื่อไฟล์ -> ไฟล์ .gz คงที่แบบไบต์ต่อไบต์ รันซ้ำไม่เกิด diff ปลอม
+    with open(path, "wb") as raw, \
+         gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gz, \
+         io.TextIOWrapper(gz, encoding="utf-8", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for r in rows:
@@ -285,8 +289,7 @@ def main():
     write_csv(os.path.join(OUTDIR, "water_commitments_2566-2569.csv.gz"), DETAIL_COLS, detail_obliged)
     # สำเนาสำหรับหน้าเว็บ (สถิติ static) — ไฟล์งบรายปี ภาระผูกพัน และไฟล์ Excel ให้ดาวน์โหลด
     for fname in ("water_budget_detail_2566-2569.csv.gz",
-                  "water_commitments_2566-2569.csv.gz",
-                  "water_budget_2566-2569.xlsx"):
+                  "water_commitments_2566-2569.csv.gz"):
         try:
             with open(os.path.join(OUTDIR, fname), "rb") as src, \
                  open(os.path.join(DOCSDATA, fname), "wb") as dst:
@@ -376,6 +379,13 @@ def main():
     write_xlsx(os.path.join(OUTDIR, "water_budget_2566-2569.xlsx"),
                detail_annual, detail_obliged, plan_year, scope_year, min_year, unit_year,
                proj_year, cat_year, YEARS)
+    # คัดลอกไฟล์ Excel (สร้างเสร็จแล้ว) ไปให้หน้าเว็บดาวน์โหลด
+    try:
+        with open(os.path.join(OUTDIR, "water_budget_2566-2569.xlsx"), "rb") as src, \
+             open(os.path.join(DOCSDATA, "water_budget_2566-2569.xlsx"), "wb") as dst:
+            dst.write(src.read())
+    except OSError as exc:  # pragma: no cover
+        print("  ! คัดลอกไฟล์ Excel ไป docs/data ไม่ได้:", exc)
 
     # ---------------- ตาราง markdown สำหรับรายงาน
     write_md_tables(os.path.join(OUTDIR, "tables_for_report.md"),
