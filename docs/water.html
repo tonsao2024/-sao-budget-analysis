@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>งบประมาณด้านการบริหารจัดการน้ำ 2566–2569 · Water Budget Explorer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232f7bbf'/><text x='50' y='70' font-size='58' text-anchor='middle' fill='white' font-family='serif'>💧</text></svg>">
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --panel2:#fbfcfd; --text:#1b1f24; --muted:#5d6b7a;
+  --line:#e3e7ec; --accent:#2f7bbf; --accent-soft:#e8f2fb; --good:#2e8b57; --warn:#b8860b;
+  --cA:#2f7bbf; --cB1:#4c9a8f; --cB2:#8a6fbf; --cB3:#c98a3c;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#12161b; --panel:#1a2027; --panel2:#20272f; --text:#e8edf3; --muted:#9fadb9;
+         --line:#2b333c; --accent:#68a8de; --accent-soft:#22303d; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);
+  font-family:"Noto Sans Thai","Noto Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.55}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:1380px;margin:0 auto;padding:18px 16px 60px}
+header.top{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+h1{font-size:20px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px}
+.badge{display:inline-block;background:var(--accent-soft);color:var(--accent);border-radius:99px;
+  padding:2px 10px;font-size:12px;margin-right:6px;white-space:nowrap}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:14px 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.card .k{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.card .v{font-size:19px;font-weight:600;margin-top:2px}
+.card .s{font-size:12px;color:var(--muted)}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.panel h2{font-size:15px;margin:0 0 10px}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+select,input[type=text],input[type=number]{background:var(--panel2);color:var(--text);border:1px solid var(--line);
+  border-radius:8px;padding:6px 8px;font-family:inherit;font-size:13px;width:100%}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:99px;
+  padding:4px 12px;font-size:12.5px;cursor:pointer;user-select:none}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 12px;font-family:inherit;
+  font-size:13px;cursor:pointer}
+button.btn.ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+th{position:sticky;top:0;background:var(--panel2);z-index:1;cursor:pointer;font-size:12.5px;color:var(--muted);white-space:nowrap}
+th.num,td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.clickable:hover{background:var(--accent-soft);cursor:pointer}
+.tbl-wrap{max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.bar{height:9px;border-radius:99px;background:var(--accent-soft);overflow:hidden;min-width:60px}
+.bar>i{display:block;height:100%;background:var(--accent)}
+.small{font-size:12px;color:var(--muted)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tabs .chip.on{background:var(--text);border-color:var(--text);color:var(--bg)}
+.note{border-left:3px solid var(--warn);background:var(--panel2);padding:8px 12px;border-radius:0 8px 8px 0;
+  font-size:12.5px;color:var(--muted);margin:8px 0}
+.loading{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;gap:12px;
+  align-items:center;justify-content:center;z-index:50;text-align:center;padding:20px}
+.spinner{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;
+  animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hidden{display:none !important}
+.pager{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:10px;flex-wrap:wrap}
+.scope-tag{border-radius:6px;padding:1px 6px;font-size:11.5px;color:#fff;white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="loading" id="loading">
+  <div class="spinner"></div>
+  <div id="loadmsg">กำลังโหลดข้อมูลงบประมาณด้านน้ำ…</div>
+  <div class="small">ข้อมูล: water_budget_detail_2566-2569.csv.gz (จากคลังข้อมูลงบประมาณที่ clean แล้ว)</div>
+</div>
+
+<div class="wrap hidden" id="app">
+  <header class="top">
+    <div>
+      <h1>💧 งบประมาณด้านการบริหารจัดการน้ำ พ.ศ. 2566–2569</h1>
+      <div class="sub">แหล่งข้อมูล: <code>output/budget_2566-2569_clean.csv.gz</code> · สร้างด้วย <code>analyze_water_budget.py</code>
+        · <a href="index.html">← กลับหน้าแอปหลัก (งบประมาณทั้งประเทศ)</a></div>
+    </div>
+    <div>
+      <span class="badge">รายจ่ายรายปีเท่านั้น (ไม่รวมภาระผูกพัน)</span>
+      <span class="badge" id="stamp"></span>
+    </div>
+  </header>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="panel">
+    <h2>ตัวกรอง</h2>
+    <div class="row" style="margin-bottom:8px">
+      <span class="small" style="min-width:52px">ปีงบประมาณ</span>
+      <div class="chips" id="year-chips"></div>
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <span class="small" style="min-width:52px">ขอบเขต</span>
+      <div class="chips" id="scope-chips"></div>
+    </div>
+    <div class="filters">
+      <label class="f">กระทรวง<select id="f-ministry"></select></label>
+      <label class="f">หน่วยงาน<select id="f-unit"></select></label>
+      <label class="f">แผนงาน<select id="f-plan"></select></label>
+      <label class="f">โครงการ<select id="f-project"></select></label>
+      <label class="f">ค้นหารายการ / คำค้น
+        <input type="text" id="f-q" placeholder="เช่น อ่างเก็บน้ำ, ประปา, ลุ่มน้ำ…"></label>
+      <label class="f">จำนวนเงินขั้นต่ำ (บาท)<input type="number" id="f-min" min="0" step="1000000" placeholder="0"></label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost" id="btn-reset">ล้างตัวกรอง</button>
+      <button class="btn ghost" id="btn-csv">ส่งออก CSV (ที่กรองอยู่)</button>
+      <button class="btn ghost" id="btn-xlsx">ส่งออก Excel</button>
+      <span class="small" id="count"></span>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="chip on" data-view="year">สรุปรายปี</button>
+    <button class="chip" data-view="ministry">กระทรวง</button>
+    <button class="chip" data-view="unit">หน่วยงาน</button>
+    <button class="chip" data-view="plan">แผนงาน</button>
+    <button class="chip" data-view="project">โครงการ</button>
+    <button class="chip" data-view="rows">รายการทั้งหมด</button>
+    <button class="chip" data-view="comm">ภาระผูกพัน</button>
+  </div>
+
+  <div class="panel" id="view"></div>
+  <div class="note" id="footnote">
+    <b>ข้อควรระวัง:</b> ตัวเลขทั้งหมดเป็น <b>งบประมาณรายจ่ายรายปี</b> (ไม่รวมตารางภาระผูกพันข้ามปี ซึ่งดูได้ในแท็บ “ภาระผูกพัน”)
+    · ข้อมูลมาจากร่าง พ.ร.บ. งบประมาณรายจ่าย ฉบับที่ 3–4 (เอกสารปี 2566–2569) ซึ่งครอบคลุม ~94% ของวงเงินงบประมาณทั้งประเทศ
+    · ขอบเขต A = แผนงานที่มีชื่อว่า “ทรัพยากรน้ำ” ทั้งแผน, B1/B2/B3 = รายการด้านน้ำที่อยู่ในแผนงานอื่น (ดูนิยามในรายงาน <code>WATER_BUDGET_REPORT.md</code>)
+  </div>
+</div>
+
+<script src="static/vendor/papaparse.min.js"></script>
+<script src="static/vendor/xlsx.full.min.js"></script>
+<script>
+'use strict';
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtInt = (v) => Number(v || 0).toLocaleString('en-US');
+const fmtB = (v) => `${(Number(v || 0) / 1e9).toLocaleString('en-US', {maximumFractionDigits: 3})} พันล้านบาท`;
+const fmtM = (v) => `${(Number(v || 0) / 1e6).toLocaleString('en-US', {maximumFractionDigits: 1})} ล้านบาท`;
+const fmtTHB = (v) => {
+  v = Number(v || 0); const a = Math.abs(v), neg = v < 0 ? '−' : '';
+  if (a >= 1e12) return neg + (a/1e12).toLocaleString('en-US',{maximumFractionDigits:2}) + ' ล้านล้านบาท';
+  if (a >= 1e9) return neg + (a/1e9).toLocaleString('en-US',{maximumFractionDigits:2}) + ' พันล้านบาท';
+  if (a >= 1e6) return neg + (a/1e6).toLocaleString('en-US',{maximumFractionDigits:1}) + ' ล้านบาท';
+  if (a >= 1e3) return neg + (a/1e3).toLocaleString('en-US',{maximumFractionDigits:0}) + ' พันบาท';
+  return neg + fmtInt(a) + ' บาท';
+};
+const fmtBE = (y) => `พ.ศ. ${Number(y) + 543} (${y})`;
+const SCOPE = {
+  A:  { label: 'A · แผนงานด้านทรัพยากรน้ำ', color: 'var(--cA)' },
+  B1: { label: 'B1 · โครงการน้ำในแผนงานอื่น', color: 'var(--cB1)' },
+  B2: { label: 'B2 · หน่วยงานน้ำในแผนงานอื่น', color: 'var(--cB2)' },
+  B3: { label: 'B3 · รายการน้ำระดับไอเทม', color: 'var(--cB3)' },
+};
+const SCOPES = ['A', 'B1', 'B2', 'B3'];
+const DCOLS = ['water_scope','scope_reason','FISCAL_YEAR','BUDGET_PLAN','MINISTRY','BUDGETARY_UNIT','PROJECT','OUTPUT',
+  'CATEGORY_LV1','CATEGORY_LV2','CATEGORY_LV3','CATEGORY_LV4','CATEGORY_LV5','CATEGORY_LV6','ITEM_DESCRIPTION',
+  'AMOUNT','CROSS_FUNC?','OBLIGED?','REF_DOC','REF_PAGE_NO','Source_Sheet','dq_flag'];
+
+let ANNUAL = [], COMM = [];
+const state = { years: new Set(), scopes: new Set(SCOPES), ministry: '', unit: '', plan: '', project: '',
+                q: '', min: 0, view: 'year', sort: 'AMOUNT', dir: -1, page: 1, pageSize: 100 };
+
+/* ---------------- โหลดข้อมูล ---------------- */
+async function fetchGzText(url, onProgress) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`โหลด ${url} ไม่ได้ (${res.status})`);
+  if (typeof DecompressionStream === 'undefined')
+    throw new Error('เบราว์เซอร์นี้ไม่รองรับ DecompressionStream — กรุณาใช้ Chrome/Edge/Firefox/Safari รุ่นใหม่');
+  const total = Number(res.headers.get('content-length') || 0);
+  const ds = new DecompressionStream('gzip');
+  const stream = res.body.pipeThrough(ds);
+  const reader = stream.getReader(); const chunks = []; let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got += value.length;
+    if (onProgress) onProgress(total ? Math.min(0.99, got / (total * 3.2)) : 0.5);
+  }
+  const merged = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let off = 0; for (const c of chunks) { merged.set(c, off); off += c.length; }
+  return new TextDecoder('utf-8').decode(merged);
+}
+function parseCsv(text) {
+  const out = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: false });
+  const rows = out.data.filter((r) => r && r.water_scope);
+  for (const r of rows) { r.AMOUNT = Number(String(r.AMOUNT || '0').replace(/[^0-9.\-]/g, '')) || 0; r.FISCAL_YEAR = String(r.FISCAL_YEAR || ''); }
+  return rows;
+}
+async function boot() {
+  try {
+    $('#loadmsg').textContent = 'กำลังโหลดรายละเอียดงบรายปี…';
+    const t1 = await fetchGzText('data/water_budget_detail_2566-2569.csv.gz', (p) => { $('#loadmsg').textContent = `กำลังโหลดรายละเอียดงบรายปี… ${Math.round(p * 100)}%`; });
+    ANNUAL = parseCsv(t1);
+    $('#loadmsg').textContent = 'กำลังโหลดภาระผูกพัน…';
+    const t2 = await fetchGzText('data/water_commitments_2566-2569.csv.gz', (p) => { $('#loadmsg').textContent = `กำลังโหลดภาระผูกพัน… ${Math.round(p * 100)}%`; });
+    COMM = parseCsv(t2);
+    const ys = [...new Set(ANNUAL.map((r) => r.FISCAL_YEAR))].sort();
+    state.years = new Set(ys);
+    $('#stamp').textContent = `ข้อมูล ${ANNUAL.length.toLocaleString()} รายการงบรายปี + ${COMM.length.toLocaleString()} รายการภาระผูกพัน`;
+    buildControls(ys);
+    render();
+    $('#loading').classList.add('hidden'); $('#app').classList.remove('hidden');
+  } catch (e) {
+    $('#loadmsg').innerHTML = `โหลดข้อมูลไม่สำเร็จ: ${esc(e.message)}<br><span class="small">ลองเปิดผ่านเว็บเซิร์ฟเวอร์ (http://) ไม่ใช่เปิดไฟล์ตรง ๆ ด้วย file://</span>`;
+    $('.spinner') && $('.spinner').remove();
+  }
+}
+
+/* ---------------- ตัวกรอง ---------------- */
+function buildControls(years) {
+  const yc = $('#year-chips'); yc.innerHTML = '';
+  for (const y of years) {
+    const b = document.createElement('button');
+    b.className = 'chip on'; b.textContent = fmtBE(y); b.dataset.year = y;
+    b.onclick = () => { b.classList.toggle('on'); b.classList.contains('on') ? state.years.add(y) : state.years.delete(y); state.page = 1; render(); };
+    yc.appendChild(b);
+  }
+  const sc = $('#scope-chips'); sc.innerHTML = '';
+  for (const s of SCOPES) {
+    const b = document.createElement('button');
+    b.className = 'chip on'; b.dataset.scope = s;
+    b.innerHTML = `<span class="dot" style="background:${SCOPE[s].color}"></span> ${esc(SCOPE[s].label)}`;
+    b.onclick = () => { b.classList.toggle('on'); b.classList.contains('on') ? state.scopes.add(s) : state.scopes.delete(s); state.page = 1; render(); };
+    sc.appendChild(b);
+  }
+  fillSelect('#f-ministry', 'MINISTRY', 'ทุกกระทรวง');
+  fillSelect('#f-unit', 'BUDGETARY_UNIT', 'ทุกหน่วยงาน');
+  fillSelect('#f-plan', 'BUDGET_PLAN', 'ทุกแผนงาน');
+  fillSelect('#f-project', 'PROJECT', 'ทุกโครงการ (รวมไม่ระบุ)');
+  $('#f-ministry').onchange = (e) => { state.ministry = e.target.value; state.page = 1; refillDepend(); render(); };
+  $('#f-unit').onchange = (e) => { state.unit = e.target.value; state.page = 1; render(); };
+  $('#f-plan').onchange = (e) => { state.plan = e.target.value; state.page = 1; render(); };
+  $('#f-project').onchange = (e) => { state.project = e.target.value; state.page = 1; render(); };
+  $('#f-q').oninput = (e) => { state.q = e.target.value.trim(); state.page = 1; render(); };
+  $('#f-min').oninput = (e) => { state.min = Number(e.target.value || 0); state.page = 1; render(); };
+  $('#btn-reset').onclick = () => {
+    state.years = new Set(years); state.scopes = new Set(SCOPES); state.ministry = state.unit = state.plan = state.project = '';
+    state.q = ''; state.min = 0; state.page = 1; state.sort = 'AMOUNT'; state.dir = -1;
+    $('#f-ministry').value = ''; $('#f-unit').value = ''; $('#f-plan').value = ''; $('#f-project').value = '';
+    $('#f-q').value = ''; $('#f-min').value = '';
+    document.querySelectorAll('#year-chips .chip, #scope-chips .chip').forEach((c) => c.classList.add('on'));
+    refillDepend(); render();
+  };
+  $('#btn-csv').onclick = () => exportCsv();
+  $('#btn-xlsx').onclick = () => exportXlsx();
+  for (const t of document.querySelectorAll('#tabs .chip'))
+    t.onclick = () => { document.querySelectorAll('#tabs .chip').forEach((x) => x.classList.remove('on')); t.classList.add('on'); state.view = t.dataset.view; state.page = 1; render(); };
+}
+function refillDepend() {
+  const base = filtered({ignore: ['unit', 'plan', 'project']});
+  const keepUnit = state.unit, keepPlan = state.plan, keepProject = state.project;
+  fillSelect('#f-unit', 'BUDGETARY_UNIT', 'ทุกหน่วยงาน', base);
+  fillSelect('#f-plan', 'BUDGET_PLAN', 'ทุกแผนงาน', base);
+  fillSelect('#f-project', 'PROJECT', 'ทุกโครงการ (รวมไม่ระบุ)', base);
+  if (keepUnit && ![...$('#f-unit').options].some((o) => o.value === keepUnit)) state.unit = '';
+  if (keepPlan && ![...$('#f-plan').options].some((o) => o.value === keepPlan)) state.plan = '';
+  if (keepProject && ![...$('#f-project').options].some((o) => o.value === keepProject)) state.project = '';
+  $('#f-unit').value = state.unit; $('#f-plan').value = state.plan; $('#f-project').value = state.project;
+}
+function fillSelect(sel, col, first, rows) {
+  const el = $(sel); const keep = el.value;
+  const src = rows || ANNUAL;
+  const vals = [...new Set(src.map((r) => (r[col] || '').trim()))]
+    .filter((v) => v && !(col === 'PROJECT' && v === ''))
+    .sort((a, b) => a.localeCompare(b, 'th'));
+  el.innerHTML = `<option value="">${esc(first)}</option>` + vals.map((v) => `<option value="${esc(v)}">${esc(v.length > 90 ? v.slice(0, 90) + '…' : v)}</option>`).join('');
+  if (keep && elsafe(el, keep)) el.value = keep;
+  function elsafe(e, v) { return [...e.options].some((o) => o.value === v); }
+}
+
+/* ---------------- ข้อมูลที่กรองแล้ว ---------------- */
+function filtered(opt = {}) {
+  const ig = new Set(opt.ignore || []);
+  return ANNUAL.filter((r) => {
+    if (state.years.size && !state.years.has(r.FISCAL_YEAR)) return false;
+    if (state.scopes.size && !state.scopes.has(r.water_scope)) return false;
+    if (!ig.has('ministry') && state.ministry && r.MINISTRY !== state.ministry) return false;
+    if (!ig.has('unit') && state.unit && r.BUDGETARY_UNIT !== state.unit) return false;
+    if (!ig.has('plan') && state.plan && r.BUDGET_PLAN !== state.plan) return false;
+    if (!ig.has('project') && state.project && r.PROJECT !== state.project) return false;
+    if (state.min && Math.abs(r.AMOUNT) < state.min) return false;
+    if (state.q) {
+      const q = state.q.toLowerCase();
+      const hay = [r.ITEM_DESCRIPTION, r.PROJECT, r.BUDGETARY_UNIT, r.BUDGET_PLAN, r.MINISTRY, r.CATEGORY_LV1, r.CATEGORY_LV2]
+        .join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+const sum = (rs) => rs.reduce((a, r) => a + r.AMOUNT, 0);
+
+/* ---------------- เรนเดอร์ ---------------- */
+function render() {
+  const rows = filtered();
+  const total = sum(rows);
+  $('#count').textContent = `พบ ${rows.length.toLocaleString()} รายการ · รวม ${fmtTHB(total)}`;
+  renderCards(rows, total);
+  const v = $('#view'); v.innerHTML = '';
+  if (state.view === 'year') renderYear(v, rows);
+  else if (state.view === 'comm') renderComm(v);
+  else if (state.view === 'rows') renderRows(v, rows);
+  else renderGroup(v, rows, state.view);
+}
+function renderCards(rows, total) {
+  const byScope = {}; for (const s of SCOPES) byScope[s] = rows.filter((r) => r.water_scope === s);
+  const annualTotal = sum(ANNUAL);
+  const c = [
+    `<div class="card"><div class="k">รวมที่กรองอยู่</div><div class="v">${fmtB(total)}</div><div class="s">${rows.length.toLocaleString()} รายการ · ${fmtTHB(total)}</div></div>`,
+    ...SCOPES.map((s) => `<div class="card"><div class="k"><span class="dot" style="background:${SCOPE[s].color}"></span> ${esc(SCOPE[s].label)}</div>
+      <div class="v">${fmtB(sum(byScope[s]))}</div><div class="s">${byScope[s].length.toLocaleString()} รายการ</div></div>`),
+    `<div class="card"><div class="k">ทั้งฐานข้อมูลน้ำ (ก่อนกรอง)</div><div class="v">${fmtB(annualTotal)}</div>
+      <div class="s">${ANNUAL.length.toLocaleString()} รายการ · ${ANNUAL.length && [...new Set(ANNUAL.map((r) => r.FISCAL_YEAR))].length} ปีงบประมาณ</div></div>`,
+  ];
+  $('#cards').innerHTML = c.join('');
+}
+function renderYear(v, rows) {
+  const years = [...new Set(ANNUAL.map((r) => r.FISCAL_YEAR))].sort();
+  const data = years.map((y) => {
+    const r = { year: y, total: 0, by: {} };
+    for (const s of SCOPES) { r.by[s] = rows.filter((x) => x.FISCAL_YEAR === y && x.water_scope === s); }
+    r.total = sum(rows.filter((x) => x.FISCAL_YEAR === y));
+    return r;
+  });
+  const max = Math.max(1, ...data.map((d) => d.total));
+  let html = `<h2>งบประมาณรายปี แยกตามขอบเขต (เฉพาะที่กรองอยู่)</h2><div class="tbl-wrap"><table>
+    <thead><tr><th>ปีงบประมาณ</th>${SCOPES.map((s) => `<th class="num"><span class="dot" style="background:${SCOPE[s].color}"></span> ${s}</th>`).join('')}
+    <th class="num">รวม</th><th style="width:22%">สัดส่วน</th><th class="num">รายการ</th></tr></thead><tbody>`;
+  for (const d of data) {
+    html += `<tr><td>${fmtBE(d.year)}</td>` + SCOPES.map((s) => `<td class="num">${sum(d.by[s]) ? fmtM(sum(d.by[s])) : '–'}</td>`).join('')
+      + `<td class="num"><b>${fmtM(d.total)}</b></td>
+      <td><div class="bar"><i style="width:${(d.total / max * 100).toFixed(1)}%"></i></div></td>
+      <td class="num">${rows.filter((x) => x.FISCAL_YEAR === d.year).length.toLocaleString()}</td></tr>`;
+  }
+  const grand = sum(rows);
+  html += `<tr><td><b>รวม</b></td>${SCOPES.map((s) => `<td class="num"><b>${fmtM(sum(rows.filter((x) => x.water_scope === s)))}</b></td>`).join('')}
+    <td class="num"><b>${fmtM(grand)}</b></td><td></td><td class="num"><b>${rows.length.toLocaleString()}</b></td></tr>`;
+  html += `</tbody></table></div>`;
+  html += `<div class="note">หมายเหตุ: ปี 2565 ไม่มีข้อมูลงบรายปีในชุดข้อมูลนี้ (มีเฉพาะแถวภาระผูกพัน) — งบรายปีที่มีคือ พ.ศ. 2566–2569</div>`;
+  v.innerHTML = html;
+}
+const LABEL_OF = { ministry: 'กระทรวง', unit: 'หน่วยงาน', plan: 'แผนงาน', project: 'โครงการ' };
+function renderGroup(v, rows, dim) {
+  const col = { ministry: 'MINISTRY', unit: 'BUDGETARY_UNIT', plan: 'BUDGET_PLAN', project: 'PROJECT' }[dim];
+  const map = new Map();
+  for (const r of rows) {
+    const k = (r[col] || '').trim() || '(ไม่ระบุ)';
+    if (!map.has(k)) map.set(k, { key: k, amt: 0, n: 0, by: {} , unit: r.BUDGETARY_UNIT, plan: r.BUDGET_PLAN });
+    const o = map.get(k); o.amt += r.AMOUNT; o.n++;
+    o.by[r.FISCAL_YEAR] = (o.by[r.FISCAL_YEAR] || 0) + r.AMOUNT;
+  }
+  const list = [...map.values()].sort((a, b) => b.amt - a.amt);
+  const years = [...new Set(ANNUAL.map((r) => r.FISCAL_YEAR))].sort().filter((y) => state.years.has(y));
+  const total = sum(rows) || 1;
+  const max = list.length ? list[0].amt : 1;
+  const shown = list.slice(0, 300);
+  let html = `<h2>${esc(LABEL_OF[dim])} (${list.length.toLocaleString()} รายการ · ${rows.length.toLocaleString()} แถว · ${fmtTHB(sum(rows))})</h2>`;
+  html += `<div class="small" style="margin-bottom:6px">คลิกที่แถวเพื่อกรองตามค่านั้น</div><div class="tbl-wrap"><table>
+    <thead><tr><th>#</th><th>${esc(LABEL_OF[dim])}</th><th class="num">จำนวนเงิน</th><th style="width:18%">สัดส่วน</th>
+    ${years.map((y) => `<th class="num">${Number(y) + 543}</th>`).join('')}<th class="num">รายการ</th></tr></thead><tbody>`;
+  shown.forEach((o, i) => {
+    html += `<tr class="clickable" data-key="${esc(o.key)}"><td>${i + 1}</td><td>${esc(o.key)}
+      ${dim === 'project' || dim === 'plan' ? `<div class="small">${esc(o.unit || '')}</div>` : ''}</td>
+      <td class="num">${fmtM(o.amt)}</td>
+      <td><div class="bar"><i style="width:${(o.amt / max * 100).toFixed(1)}%"></i></div><span class="small">${(o.amt / total * 100).toFixed(1)}%</span></td>
+      ${years.map((y) => `<td class="num">${o.by[y] ? fmtM(o.by[y]) : '–'}</td>`).join('')}
+      <td class="num">${o.n.toLocaleString()}</td></tr>`;
+  });
+  if (list.length > shown.length) html += `<tr><td colspan="${years.length + 5}" class="small">แสดง 300 อันดับแรกจาก ${list.length} — ใช้ตัวกรองเพื่อเจาะลึก</td></tr>`;
+  html += `</tbody></table></div>`;
+  v.innerHTML = html;
+  v.querySelectorAll('tr.clickable').forEach((tr) => {
+    tr.onclick = () => {
+      const k = tr.dataset.key;
+      if (dim === 'ministry') state.ministry = k === '(ไม่ระบุ)' ? '' : k;
+      if (dim === 'unit') state.unit = k === '(ไม่ระบุ)' ? '' : k;
+      if (dim === 'plan') state.plan = k === '(ไม่ระบุ)' ? '' : k;
+      if (dim === 'project') state.project = k === '(ไม่ระบุ)' ? '' : k;
+      $('#f-ministry').value = state.ministry; $('#f-unit').value = state.unit; $('#f-plan').value = state.plan; $('#f-project').value = state.project;
+      state.view = 'rows'; state.page = 1;
+      document.querySelectorAll('#tabs .chip').forEach((x) => x.classList.toggle('on', x.dataset.view === 'rows'));
+      render();
+    };
+  });
+}
+function renderRows(v, rows) {
+  const sorted = sortRows(rows);
+  const pages = Math.max(1, Math.ceil(sorted.length / state.pageSize));
+  state.page = Math.min(state.page, pages);
+  const start = (state.page - 1) * state.pageSize;
+  const page = sorted.slice(start, start + state.pageSize);
+  let html = `<h2>รายการทั้งหมด (${sorted.length.toLocaleString()} แถว · ${fmtTHB(sum(sorted))})</h2>
+    <div class="tbl-wrap"><table><thead><tr>
+    ${[['FISCAL_YEAR','ปี'],['water_scope','ขอบเขต'],['BUDGET_PLAN','แผนงาน'],['MINISTRY','กระทรวง'],['BUDGETARY_UNIT','หน่วยงาน'],
+       ['PROJECT','โครงการ'],['ITEM_DESCRIPTION','รายการ'],['CATEGORY_LV1','หมวด'],['AMOUNT','จำนวนเงิน'],['REF_DOC','เอกสาร'],['REF_PAGE_NO','หน้า']]
+      .map(([k, l]) => `<th data-sort="${k}" ${k === 'AMOUNT' ? 'class="num"' : ''}>${l}${state.sort === k ? (state.dir < 0 ? ' ▼' : ' ▲') : ''}</th>`).join('')}
+    </tr></thead><tbody>`;
+  for (const r of page) {
+    html += `<tr><td>${r.FISCAL_YEAR ? Number(r.FISCAL_YEAR) + 543 : ''}</td>
+      <td><span class="scope-tag" style="background:${SCOPE[r.water_scope] ? SCOPE[r.water_scope].color : '#888'}">${esc(r.water_scope)}</span></td>
+      <td>${esc(r.BUDGET_PLAN)}</td><td>${esc(r.MINISTRY)}</td><td>${esc(r.BUDGETARY_UNIT)}</td>
+      <td>${esc(r.PROJECT)}</td><td>${esc(r.ITEM_DESCRIPTION)}${r.dq_flag ? `<div class="small">⚑ ${esc(r.dq_flag)}</div>` : ''}</td>
+      <td>${esc(r.CATEGORY_LV1)}</td><td class="num">${fmtInt(r.AMOUNT)}</td>
+      <td class="small">${esc((r.REF_DOC || '').split('/')[0])}</td><td class="num">${esc(r.REF_PAGE_NO)}</td></tr>`;
+  }
+  html += `</tbody></table></div>`;
+  html += `<div class="pager"><button class="btn ghost" id="p-prev" ${state.page <= 1 ? 'disabled' : ''}>← ก่อนหน้า</button>
+    <span class="small">หน้า ${state.page.toLocaleString()} / ${pages.toLocaleString()}</span>
+    <button class="btn ghost" id="p-next" ${state.page >= pages ? 'disabled' : ''}>ถัดไป →</button>
+    <span class="small">(แสดง ${state.pageSize} แถว/หน้า — เรียงตาม ${esc(state.sort)} ${state.dir < 0 ? 'มาก→น้อย' : 'น้อย→มาก'})</span></div>`;
+  v.innerHTML = html;
+  $('#p-prev').onclick = () => { state.page--; render(); };
+  $('#p-next').onclick = () => { state.page++; render(); };
+  for (const th of v.querySelectorAll('th[data-sort]'))
+    th.onclick = () => { const k = th.dataset.sort; if (state.sort === k) state.dir = -state.dir; else { state.sort = k; state.dir = k === 'AMOUNT' ? -1 : 1; } render(); };
+}
+function sortRows(rows) {
+  const k = state.sort, d = state.dir;
+  return [...rows].sort((a, b) => {
+    let x = a[k], y = b[k];
+    if (k === 'AMOUNT' || k === 'FISCAL_YEAR') { x = Number(x) || 0; y = Number(y) || 0; }
+    else { x = String(x || ''); y = String(y || ''); }
+    return (x < y ? -1 : x > y ? 1 : 0) * d;
+  });
+}
+function renderComm(v) {
+  const rows = COMM.filter((r) => state.years.has(r.FISCAL_YEAR) && state.scopes.has(r.water_scope));
+  const years = [...new Set(COMM.map((r) => r.FISCAL_YEAR))].sort();
+  const total = sum(rows);
+  let html = `<h2>ภาระผูกพันข้ามปี (ตารางผูกพันที่แนบมากับเอกสารงบประมาณ)</h2>
+    <div class="note"><b>ห้ามนำยอดนี้ไปรวมกับงบรายปี</b> — แต่ละแถวคือ “สัญญาที่ผูกพันไว้แล้ว” ซึ่งปรากฏซ้ำในเอกสารหลายฉบับ
+    (เอกสารปี 2566–2569 มีตารางภาระผูกพันของตัวเอง) จึงใช้ดูรายฉบับ/รายปีที่ผูกพันเท่านั้น<br>
+    แถวที่แสดง: <b>${rows.length.toLocaleString()}</b> · รวม <b>${fmtTHB(total)}</b> · ปีที่โหลดมา ${COMM.length.toLocaleString()} แถว</div>
+    <div class="tbl-wrap"><table><thead><tr><th>ปีที่ผูกพัน (พ.ศ.)</th>${SCOPES.map((s) => `<th class="num">${s}</th>`).join('')}<th class="num">รวม</th><th class="num">รายการ</th></tr></thead><tbody>`;
+  for (const y of years) {
+    const r = rows.filter((x) => x.FISCAL_YEAR === y);
+    const b = SCOPES.map((s) => sum(r.filter((x) => x.water_scope === s)));
+    html += `<tr><td>${fmtBE(y)}</td>${b.map((x) => `<td class="num">${x ? fmtM(x) : '–'}</td>`).join('')}
+      <td class="num"><b>${fmtM(sum(r))}</b></td><td class="num">${r.length.toLocaleString()}</td></tr>`;
+  }
+  html += `</tbody></table></div>`;
+  const top = [...rows].sort((a, b) => b.AMOUNT - a.AMOUNT).slice(0, 40);
+  html += `<h2 style="margin-top:16px">รายการภาระผูกพันที่ใหญ่ที่สุด 40 รายการ (ตามตัวกรอง)</h2>
+    <div class="tbl-wrap"><table><thead><tr><th>ปีที่ผูกพัน</th><th>ขอบเขต</th><th>หน่วยงาน</th><th>โครงการ</th><th>รายการ</th><th class="num">จำนวนเงิน</th></tr></thead><tbody>`;
+  for (const r of top)
+    html += `<tr><td>${Number(r.FISCAL_YEAR) + 543}</td><td>${esc(r.water_scope)}</td><td>${esc(r.BUDGETARY_UNIT)}</td>
+      <td>${esc(r.PROJECT)}</td><td>${esc(r.ITEM_DESCRIPTION)}</td><td class="num">${fmtInt(r.AMOUNT)}</td></tr>`;
+  html += `</tbody></table></div>`;
+  v.innerHTML = html;
+}
+
+/* ---------------- ส่งออก ---------------- */
+function exportRows(rows, kind) {
+  if (!rows.length) { alert('ไม่มีรายการให้ส่งออก'); return; }
+  const data = rows.map((r) => ({ 'ปีงบประมาณ (พ.ศ.)': Number(r.FISCAL_YEAR) + 543, 'ปีงบประมาณ (ค.ศ.)': r.FISCAL_YEAR,
+    'ขอบเขต': r.water_scope, 'เหตุผลขอบเขต': r.scope_reason, 'แผนงาน': r.BUDGET_PLAN, 'กระทรวง': r.MINISTRY,
+    'หน่วยงาน': r.BUDGETARY_UNIT, 'โครงการ': r.PROJECT, 'รายการ (ไอเทม)': r.ITEM_DESCRIPTION,
+    'หมวดงบ LV1': r.CATEGORY_LV1, 'หมวดงบ LV2': r.CATEGORY_LV2, 'หมวดงบ LV3': r.CATEGORY_LV3,
+    'หมวดงบ LV4': r.CATEGORY_LV4, 'หมวดงบ LV5': r.CATEGORY_LV5, 'หมวดงบ LV6': r.CATEGORY_LV6,
+    'จำนวนเงิน (บาท)': r.AMOUNT, 'ข้ามฟังก์ชัน': r['CROSS_FUNC?'], 'ผูกพันข้ามปี': r['OBLIGED?'],
+    'เอกสารอ้างอิง': r.REF_DOC, 'เลขหน้า': r.REF_PAGE_NO, 'ชีตต้นฉบับ': r.Source_Sheet, 'DQ flag': r.dq_flag }));
+  const stamp = new Date().toISOString().slice(0, 10);
+  if (kind === 'csv') {
+    const csv = Papa.unparse(data);
+    download(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }), `water_budget_filtered_${stamp}.csv`);
+  } else {
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 34 }, { wch: 44 }, { wch: 34 }, { wch: 40 }, { wch: 40 },
+      { wch: 60 }, { wch: 22 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 },
+      { wch: 12 }, { wch: 12 }, { wch: 40 }, { wch: 8 }, { wch: 18 }, { wch: 20 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'งบน้ำ (กรอง)');
+    // ตารางสรุปประกอบ
+    const byY = {}; for (const r of rows) { const y = Number(r.FISCAL_YEAR) + 543; byY[y] = byY[y] || { s: {}, t: 0 }; byY[y].t += r.AMOUNT; byY[y].s[r.water_scope] = (byY[y].s[r.water_scope] || 0) + r.AMOUNT; }
+    const sumRows = Object.keys(byY).sort().map((y) => ({ 'ปีงบประมาณ (พ.ศ.)': Number(y), A: byY[y].s.A || 0, B1: byY[y].s.B1 || 0, B2: byY[y].s.B2 || 0, B3: byY[y].s.B3 || 0, 'รวม (บาท)': byY[y].t }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sumRows), 'สรุปรายปี');
+    XLSX.writeFile(wb, `water_budget_filtered_${stamp}.xlsx`);
+  }
+}
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function exportCsv() { exportRows(filtered(), 'csv'); }
+function exportXlsx() { exportRows(filtered(), 'xlsx'); }
+
+boot();
+</script>
+</body>
+</html>
