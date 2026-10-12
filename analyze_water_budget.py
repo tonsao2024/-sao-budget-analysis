@@ -283,9 +283,10 @@ def main():
                                       r["MINISTRY"], r["BUDGETARY_UNIT"], -amount_of(r)))
     write_csv(os.path.join(OUTDIR, "water_budget_detail_2566-2569.csv.gz"), DETAIL_COLS, detail_annual)
     write_csv(os.path.join(OUTDIR, "water_commitments_2566-2569.csv.gz"), DETAIL_COLS, detail_obliged)
-    # สำเนาสำหรับหน้าเว็บ (สถิติ static) — ทั้งไฟล์งบรายปีและภาระผูกพัน
+    # สำเนาสำหรับหน้าเว็บ (สถิติ static) — ไฟล์งบรายปี ภาระผูกพัน และไฟล์ Excel ให้ดาวน์โหลด
     for fname in ("water_budget_detail_2566-2569.csv.gz",
-                  "water_commitments_2566-2569.csv.gz"):
+                  "water_commitments_2566-2569.csv.gz",
+                  "water_budget_2566-2569.xlsx"):
         try:
             with open(os.path.join(OUTDIR, fname), "rb") as src, \
                  open(os.path.join(DOCSDATA, fname), "wb") as dst:
@@ -401,98 +402,258 @@ def main():
 
 def write_xlsx(path, detail_annual, detail_obliged, plan_year, scope_year, min_year, unit_year,
                proj_year, cat_year, years):
+    """สร้างสมุดงาน Excel สำหรับส่งมอบ (หัวตารางภาษาไทย + ชีตแยกขอบเขต + ตัวกรอง + แผนภูมิ)"""
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment
         from openpyxl.utils import get_column_letter
+        from openpyxl.formatting.rule import DataBarRule
+        from openpyxl.chart import BarChart, Reference
     except ImportError:
         print("  ! ไม่มี openpyxl — ข้ามการสร้างไฟล์ xlsx (ติดตั้งด้วย pip install openpyxl)")
         return
 
-    wb = Workbook()
-    head_font = Font(bold=True, color="FFFFFF")
-    head_fill = PatternFill("solid", fgColor="C96442")
+    SCOPES = ["A", "B1", "B2", "B3"]
+    SNAME = {"A": "A · แผนงานด้านทรัพยากรน้ำ",
+             "B1": "B1 · โครงการด้านน้ำในแผนงานอื่น",
+             "B2": "B2 · งบหน่วยงานด้านน้ำในแผนงานอื่น",
+             "B3": "B3 · รายการด้านน้ำระดับไอเทม"}
+    SHORT = {"A": "A แผนงานน้ำ", "B1": "B1 โครงการนอกแผน",
+             "B2": "B2 หน่วยงานนอกแผน", "B3": "B3 ไอเทมในแผนอื่น"}
+    # ปีที่มีข้อมูลจริง (ตัดปีที่ไม่มีงบรายปีออก เช่น 2565)
+    years = [y for y in years if any(scope_year.get((s, y), 0) for s in SCOPES)]
+    ylabel = {y: f"ปี {int(y) + 543}" for y in years}
 
-    def sheet(title, cols, rows, widths=None, number_cols=()):
+    HEAD_FILL = PatternFill("solid", fgColor="1F4E79")
+    HEAD_FONT = Font(bold=True, color="FFFFFF", size=11)
+    TITLE_FONT = Font(bold=True, size=14, color="1F4E79")
+    NOTE_FONT = Font(italic=True, size=10, color="555555")
+    TOTAL_FILL = PatternFill("solid", fgColor="DDEBF7")
+    BOLD = Font(bold=True)
+    YEARFMT = "0"
+    MONEYFMT = "#,##0"
+
+    def thai_year(cy):
+        try:
+            return int(cy) + 543
+        except (TypeError, ValueError):
+            return cy
+
+    def to_num(v):
+        try:
+            f = float(v or 0)
+        except (TypeError, ValueError):
+            return 0
+        return int(f) if f == int(f) else f
+
+    def add_sheet(title, cols, rows, widths=None, money_cols=(), year_cols=(),
+                  autofilter=True, total_row=None, data_bar_cols=(), ncols=None):
         ws = wb.create_sheet(title)
         ws.append(cols)
         for c in range(1, len(cols) + 1):
             cell = ws.cell(row=1, column=c)
-            cell.font = head_font
-            cell.fill = head_fill
-            cell.alignment = Alignment(horizontal="center", wrap_text=True)
+            cell.font = HEAD_FONT
+            cell.fill = HEAD_FILL
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         for r in rows:
             ws.append(r)
+        ws.row_dimensions[1].height = 30
+        if total_row is not None:
+            ws.append(total_row)
+            for c in range(1, len(cols) + 1):
+                ws.cell(row=ws.max_row, column=c).font = BOLD
+                ws.cell(row=ws.max_row, column=c).fill = TOTAL_FILL
         for i, w in enumerate(widths or [], start=1):
             ws.column_dimensions[get_column_letter(i)].width = w
-        for col in number_cols:
-            for r in range(2, ws.max_row + 1):
-                ws.cell(row=r, column=col).number_format = "#,##0"
+        last_data = ws.max_row - (1 if total_row is not None else 0)
+        for col in money_cols:
+            for r in range(2, last_data + 1):
+                ws.cell(row=r, column=col).number_format = MONEYFMT
+        for col in year_cols:
+            for r in range(2, last_data + 1):
+                ws.cell(row=r, column=col).number_format = YEARFMT
+        if total_row is not None:
+            # แถวรวมเป็นจำนวนเงินทุกคอลัมน์ตัวเลข (เว้นคอลัมน์แรกที่เป็นชื่อ)
+            for col in range(2, len(cols) + 1):
+                if isinstance(ws.cell(row=ws.max_row, column=col).value, (int, float)):
+                    ws.cell(row=ws.max_row, column=col).number_format = MONEYFMT
+        if autofilter and ws.max_row >= 2:
+            ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{last_data}"
+        for col in data_bar_cols:
+            letter = get_column_letter(col)
+            ws.conditional_formatting.add(f"{letter}2:{letter}{last_data}",
+                                          DataBarRule(start_type="num", start_value=0,
+                                                      end_type="max", color="5B9BD5"))
         ws.freeze_panes = "A2"
         return ws
 
-    # --- หน้าสรุป
-    sheet("สรุปขอบเขต-ปี", ["ขอบเขต"] + [f"ปี {y}" for y in years] + ["รวม"],
-          [[SCOPE_LABEL[s]] + [scope_year.get((s, y), 0) for y in years]
-           + [sum(scope_year.get((s, y), 0) for y in years)] for s in ["A", "B1", "B2", "B3"]]
-          + [["รวม"] + [sum(scope_year.get((s, y), 0) for s in ["A", "B1", "B2", "B3"]) for y in years]
-             + [sum(scope_year.values())]],
-          widths=[42, 18, 18, 18, 18, 18, 20], number_cols=range(2, 8))
+    wb = Workbook()
+    grants = sum(scope_year.values())
+    by_year = {y: sum(scope_year.get((s, y), 0) for s in SCOPES) for y in years}
 
-    plans = sorted({p for (p, y) in plan_year},
-                   key=lambda p: -sum(plan_year.get((p, y), 0) for y in years))
-    sheet("แผนงาน-ปี", ["แผนงาน"] + [f"ปี {y}" for y in years] + ["รวม"],
-          [[p] + [plan_year.get((p, y), 0) for y in years]
-           + [sum(plan_year.get((p, y), 0) for y in years)] for p in plans],
-          widths=[52, 18, 18, 18, 18, 18, 20], number_cols=range(2, 8))
+    # ---------------- 1) ชีตคำอธิบาย ----------------
+    ws = wb.active
+    ws.title = "อ่านก่อน"
+    ws.column_dimensions["A"].width = 118
+    lines = [
+        ("T", "งบประมาณด้านการบริหารจัดการน้ำ พ.ศ. 2566–2569"),
+        ("", ""),
+        ("B", "ที่มาของข้อมูล"),
+        ("", "ข้อมูลงบประมาณรายจ่ายของหน่วยรับงบประมาณทุกกระทรวง จากเอกสาร “ร่างพระราชบัญญัติงบประมาณรายจ่าย "
+             "ประจำปีงบประมาณ พ.ศ. 2566–2569 (ฉบับที่ 3–4)” ซึ่งผ่านการ clean และตรวจคุณภาพแล้ว "
+             "(ไฟล์ต้นทาง: output/budget_2566-2569_clean.csv.gz)"),
+        ("", "ข้อมูลนี้เป็น “ร่าง พ.ร.บ.” ไม่ใช่ฉบับประกาศใช้ และครอบคลุมประมาณ 94% ของวงเงินงบประมาณที่ประกาศ "
+             "จึงใช้เปรียบเทียบแนวโน้มได้ แต่ไม่ใช่ยอดงบประมาณทั้งประเทศ"),
+        ("", "ในไฟล์นี้แสดงเฉพาะ “งบประมาณรายจ่ายรายปี” (OBLIGED?=False) เท่านั้น — ตารางภาระผูกพันข้ามปี "
+             "(สัญญาที่ผูกพันไว้แล้ว) แยกอยู่ชีต “ภาระผูกพัน” และห้ามนำมารวมกับงบรายปี"),
+        ("", "หมายเหตุ: ไม่มีข้อมูลงบรายปี 2565 ในชุดข้อมูล (มีแต่แถวภาระผูกพัน) จึงเริ่มที่ พ.ศ. 2566"),
+        ("", ""),
+        ("B", "นิยามขอบเขต (ดูคอลัมน์ “ขอบเขต” และ “เหตุผลขอบเขต” ในชีตรายละเอียด)"),
+        ("", "A  = แผนงานที่มีชื่อว่า “ทรัพยากรน้ำ” ทั้งแผนงาน (3 แผนงาน) — งบของแผนงานน้ำโดยตรง"),
+        ("", "B1 = โครงการที่ชื่อบ่งชี้งานน้ำ (ชลประทาน/อ่างเก็บน้ำ/เขื่อน/ฝาย/บาดาล/ลุ่มน้ำ/แม่น้ำ/คลอง/น้ำท่วม/"
+             "อุทกภัย/ภัยแล้ง/น้ำเสีย/ประปา/แหล่งน้ำ/ระบบกระจายน้ำ ฯลฯ) แต่ถูกตั้งงบในแผนงานอื่น"),
+        ("", "B2 = งบของหน่วยงานด้านน้ำ (กรมชลประทาน กรมทรัพยากรน้ำ กรมทรัพยากรน้ำบาดาล สทนช. สสน. "
+             "องค์การจัดการน้ำเสีย กรมฝนหลวง การประปา ฯลฯ) ที่ไปอยู่ในแผนงานอื่น เช่น เงินเดือนในแผนงานบุคลากรภาครัฐ"),
+        ("", "B3 = รายการระดับไอเทมที่เป็นงานน้ำชัดเจน (เช่น เงินอุดหนุนประปาหมู่บ้าน/สถานีสูบน้ำด้วยไฟฟ้า/"
+             "แหล่งกักเก็บน้ำให้ อปท. ขุดลอก ระบบบำบัดน้ำเสีย) ในแผนงานอื่น"),
+        ("", "ไม่นับ: งานเดินเรือ/ขนส่งทางน้ำ/ท่องเที่ยวทางน้ำ, ถนนที่ชื่ออ้างอิงแหล่งน้ำ, รถดับเพลิงพร้อมเครื่องสูบน้ำ, "
+             "โครงการชำระหนี้เงินกู้ และรายการที่ชื่อมีคำว่า “น้ำ” แต่ไม่ใช่งานน้ำ (น้ำตาล น้ำมัน น้ำหนัก)"),
+        ("", ""),
+        ("B", f"ยอดรวมในไฟล์นี้ — งานด้านน้ำ {grants / 1e9:,.3f} พันล้านบาท ({len(detail_annual):,} รายการ)"),
+        ("", " · ".join(f"พ.ศ. {int(y) + 543} = {by_year[y] / 1e9:,.2f} พันล้านบาท" for y in years)),
+        ("", "แยกขอบเขต: " + " · ".join(
+            f"{s} = {sum(scope_year.get((s, y), 0) for y in years) / 1e9:,.3f} พันล้านบาท "
+            f"({sum(1 for r in detail_annual if r['water_scope'] == s):,} รายการ)" for s in SCOPES)),
+        ("", ""),
+        ("B", "สารบัญชีต"),
+        ("", "1. อ่านก่อน — คำอธิบาย นิยาม และข้อควรระวัง (ชีตนี้)"),
+        ("", "2. สรุปขอบเขต-ปี — งบงานน้ำรายปี แยกขอบเขต A/B1/B2/B3 + สัดส่วน + แผนภูมิ"),
+        ("", "3. แผนงาน-ปี — เฉพาะ 3 แผนงานด้านทรัพยากรน้ำ (ขอบเขต A)"),
+        ("", "4. กระทรวง-ปี — งานน้ำทั้งระบบแยกตามกระทรวง (A+B)"),
+        ("", "5. หน่วยงาน-ปี — งานน้ำทั้งระบบแยกตามหน่วยงาน (A+B) + แผนภูมิ 15 อันดับ"),
+        ("", "6. โครงการ-ปี — ทุกโครงการที่มีงานน้ำ (A+B)"),
+        ("", "7. หมวดงบ-ปี — CATEGORY_LV1 ของงานน้ำทั้งระบบ"),
+        ("", "8. รายละเอียดงบรายปี — ทุกรายการถึงระดับไอเทม (ใช้ตัวกรองของ Excel ได้ทุกคอลัมน์)"),
+        ("", "9–12. A / B1 / B2 / B3 — รายละเอียดแยกตามขอบเขต (คอลัมน์เหมือนชีตที่ 8)"),
+        ("", "13. ภาระผูกพัน — ตารางผูกพันข้ามปี (ห้ามบวกกับงบรายปี)"),
+        ("", ""),
+        ("B", "การอ่านตัวเลข"),
+        ("", "คอลัมน์จำนวนเงินเป็น “บาท” ทุกชีต (รูปแบบ #,##0) · คอลัมน์ปี พ.ศ. = ค.ศ. + 543 · "
+             "เลขหน้า (REF_PAGE_NO) และเอกสารอ้างอิง (REF_DOC) อ้างอิงกลับไปยังเอกสารต้นฉบับได้"),
+        ("", "สร้างโดยสคริปต์ analyze_water_budget.py — รันซ้ำได้เพื่ออัปเดตตัวเลขทั้งไฟล์"),
+    ]
+    for kind, text in lines:
+        ws.append([text])
+        c = ws.cell(row=ws.max_row, column=1)
+        if kind == "T":
+            c.font = TITLE_FONT
+        elif kind == "B":
+            c.font = Font(bold=True, color="1F4E79")
+        elif text:
+            c.font = NOTE_FONT
+        c.alignment = Alignment(wrap_text=True, vertical="top")
 
-    mins = sorted({m for (m, y) in min_year}, key=lambda m: -sum(
-        a for (mm, y), a in min_year.items() if mm == m))
-    sheet("กระทรวง-ปี", ["กระทรวง"] + [f"ปี {y}" for y in years] + ["รวม"],
-          [[m] + [min_year.get((m, y), 0) for y in years]
-           + [sum(min_year.get((m, y), 0) for y in years)] for m in mins],
-          widths=[38, 18, 18, 18, 18, 18, 20], number_cols=range(2, 8))
+    # ---------------- 2) ชีตสรุปขอบเขต ----------------
+    ws = add_sheet(
+        "สรุปขอบเขต-ปี",
+        ["ขอบเขต"] + [ylabel[y] for y in years] + ["รวม 4 ปี (บาท)", "สัดส่วนของงานน้ำทั้งระบบ"],
+        [[SNAME[s]] + [to_num(scope_year.get((s, y), 0)) for y in years]
+         + [to_num(sum(scope_year.get((s, y), 0) for y in years)),
+            (sum(scope_year.get((s, y), 0) for y in years) / grants if grants else 0)]
+         for s in SCOPES],
+        widths=[40] + [17] * len(years) + [20, 22],
+        money_cols=list(range(2, len(years) + 3)),
+        year_cols=list(range(2, len(years) + 2)),
+        total_row=["รวมงานด้านน้ำทั้งระบบ"] + [to_num(by_year[y]) for y in years]
+                  + [to_num(grants), 1.0])
+    for r in range(2, len(SCOPES) + 3):
+        ws.cell(row=r, column=len(years) + 3).number_format = "0.0%"
 
-    units = sorted({u for (u, y) in unit_year}, key=lambda u: -sum(
-        a for (uu, y), a in unit_year.items() if uu == u))
-    sheet("หน่วยงาน-ปี", ["หน่วยงาน"] + [f"ปี {y}" for y in years] + ["รวม"],
-          [[u] + [unit_year.get((u, y), 0) for y in years]
-           + [sum(unit_year.get((u, y), 0) for y in years)] for u in units],
-          widths=[42, 18, 18, 18, 18, 18, 20], number_cols=range(2, 8))
+    ch = BarChart()
+    ch.type = "col"
+    ch.title = "งบประมาณด้านการบริหารจัดการน้ำรายปี (บาท) แยกตามขอบเขต"
+    ch.y_axis.title = "บาท"
+    ch.x_axis.title = "ปีงบประมาณ"
+    data = Reference(ws, min_col=1, max_col=1 + len(years), min_row=2, max_row=1 + len(SCOPES))
+    ch.add_data(data, titles_from_data=True, from_rows=True)
+    ch.set_categories(Reference(ws, min_col=2, max_col=1 + len(years), min_row=1, max_row=1))
+    ch.height, ch.width = 9.5, 24
+    ws.add_chart(ch, f"A{len(SCOPES) + 6}")
 
-    projs = sorted({p for (p, y) in proj_year}, key=lambda p: -sum(
-        a for (pp, y), a in proj_year.items() if pp == p))
-    sheet("โครงการ-ปี", ["โครงการ"] + [f"ปี {y}" for y in years] + ["รวม"],
-          [[p] + [proj_year.get((p, y), 0) for y in years]
-           + [sum(proj_year.get((p, y), 0) for y in years)] for p in projs],
-          widths=[70, 18, 18, 18, 18, 18, 20], number_cols=range(2, 8))
+    def sum_sheet(title, key, label, width, chart_top=0):
+        keys = sorted({k for (k, y) in key}, key=lambda k: -sum(key.get((k, y), 0) for y in years))
+        ws_x = add_sheet(title, [label] + [ylabel[y] for y in years] + ["รวม 4 ปี (บาท)"],
+                         [[k] + [to_num(key.get((k, y), 0)) for y in years]
+                          + [to_num(sum(key.get((k, y), 0) for y in years))] for k in keys],
+                         widths=[width] + [17] * len(years) + [20],
+                         money_cols=list(range(2, len(years) + 3)),
+                         year_cols=list(range(2, len(years) + 2)),
+                         data_bar_cols=[len(years) + 2],
+                         total_row=[f"รวม {len(keys)} รายการ"]
+                                   + [to_num(sum(key.get((k, y), 0) for k in keys)) for y in years]
+                                   + [to_num(sum(key.values()))])
+        if chart_top:
+            n = min(chart_top, len(keys))
+            c2 = BarChart()
+            c2.type = "bar"
+            c2.title = f"{label} — {n} อันดับแรก (รวม 4 ปี, บาท)"
+            c2.add_data(Reference(ws_x, min_col=len(years) + 2, min_row=1, max_row=1 + n),
+                        titles_from_data=True)
+            c2.set_categories(Reference(ws_x, min_col=1, min_row=2, max_row=1 + n))
+            c2.height, c2.width = max(7, 0.45 * n + 4), 18
+            c2.legend = None
+            ws_x.add_chart(c2, f"A{len(keys) + 4}")
+        return ws_x
 
-    cats = sorted({c for (c, y) in cat_year}, key=lambda c: -sum(
-        a for (cc, y), a in cat_year.items() if cc == c))
-    sheet("หมวดงบ-ปี", ["หมวดงบ (CATEGORY_LV1)"] + [f"ปี {y}" for y in years] + ["รวม"],
-          [[c] + [cat_year.get((c, y), 0) for y in years]
-           + [sum(cat_year.get((c, y), 0) for y in years)] for c in cats],
-          widths=[30, 18, 18, 18, 18, 18, 20], number_cols=range(2, 8))
+    sum_sheet("แผนงาน-ปี", plan_year, "แผนงาน (ขอบเขต A)", 62)
+    sum_sheet("กระทรวง-ปี", min_year, "กระทรวง", 40)
+    sum_sheet("หน่วยงาน-ปี", unit_year, "หน่วยงาน", 44, chart_top=15)
+    sum_sheet("โครงการ-ปี", proj_year, "โครงการ", 74, chart_top=15)
+    sum_sheet("หมวดงบ-ปี", cat_year, "หมวดงบ (CATEGORY_LV1)", 34)
 
-    # --- ระดับไอเทม
-    cols1 = ["water_scope", "scope_reason", "FISCAL_YEAR", "BUDGET_PLAN", "MINISTRY",
-             "BUDGETARY_UNIT", "PROJECT", "OUTPUT", "CATEGORY_LV1", "CATEGORY_LV2",
-             "CATEGORY_LV3", "CATEGORY_LV4", "CATEGORY_LV5", "CATEGORY_LV6",
-             "ITEM_DESCRIPTION", "AMOUNT", "CROSS_FUNC?", "REF_DOC", "REF_PAGE_NO"]
-    rows1 = [[r.get(c, "") for c in cols1] for r in detail_annual]
-    sheet("รายละเอียดงบรายปี", cols1, rows1,
-          widths=[6, 30, 8, 46, 26, 30, 52, 40, 14, 22, 22, 20, 16, 18, 60, 16, 8, 40, 10],
-          number_cols=[16])
+    # ---------------- 3) ชีตรายละเอียด ----------------
+    cols = ["ปีงบประมาณ (พ.ศ.)", "ปี (ค.ศ.)", "ขอบเขต", "เหตุผลขอบเขต", "แผนงาน", "กระทรวง",
+            "หน่วยงาน", "โครงการ", "รายการ (ไอเทม)", "หมวดงบ LV1", "หมวดงบ LV2", "หมวดงบ LV3",
+            "หมวดงบ LV4", "หมวดงบ LV5", "หมวดงบ LV6", "จำนวนเงิน (บาท)",
+            "ข้ามฟังก์ชัน", "ผูกพันข้ามปี", "เอกสารอ้างอิง", "เลขหน้า", "ชีตต้นฉบับ", "DQ flag"]
+    widths = [12, 9, 8, 26, 44, 26, 30, 50, 62, 16, 22, 22, 18, 18, 18, 16, 10, 10, 44, 8, 18, 26]
 
-    cols2 = cols1[:-3] + ["REF_DOC", "REF_PAGE_NO", "dq_flag"]
-    rows2 = [[r.get(c, "") for c in cols2] for r in detail_obliged]
-    sheet("ภาระผูกพัน", cols2, rows2,
-          widths=[6, 30, 8, 46, 26, 30, 52, 40, 14, 22, 22, 20, 16, 18, 60, 16, 8, 40, 10, 22],
-          number_cols=[16])
+    def drow(r):
+        return [thai_year(r.get("FISCAL_YEAR")), to_num(r.get("FISCAL_YEAR")), r.get("water_scope", ""),
+                r.get("scope_reason", ""), r.get("BUDGET_PLAN", ""), r.get("MINISTRY", ""),
+                r.get("BUDGETARY_UNIT", ""), r.get("PROJECT", ""), r.get("ITEM_DESCRIPTION", ""),
+                r.get("CATEGORY_LV1", ""), r.get("CATEGORY_LV2", ""), r.get("CATEGORY_LV3", ""),
+                r.get("CATEGORY_LV4", ""), r.get("CATEGORY_LV5", ""), r.get("CATEGORY_LV6", ""),
+                to_num(r.get("AMOUNT")), r.get("CROSS_FUNC?", ""), r.get("OBLIGED?", ""),
+                r.get("REF_DOC", ""), r.get("REF_PAGE_NO", ""), r.get("Source_Sheet", ""),
+                r.get("dq_flag", "")]
 
-    del wb["Sheet"]
+    add_sheet("รายละเอียดงบรายปี", cols, [drow(r) for r in detail_annual],
+              widths=widths, money_cols=[16], year_cols=[1, 2])
+    for s in SCOPES:
+        ws_s = add_sheet(SHORT[s], cols, [drow(r) for r in detail_annual if r["water_scope"] == s],
+                         widths=widths, money_cols=[16], year_cols=[1, 2])
+        ws_s.freeze_panes = "D2"
+
+    # ---------------- 4) ชีตภาระผูกพัน ----------------
+    cols2 = ["ปีที่ผูกพัน (พ.ศ.)", "ปี (ค.ศ.)", "ขอบเขต", "แผนงาน", "กระทรวง", "หน่วยงาน",
+             "โครงการ", "รายการ (ไอเทม)", "จำนวนเงิน (บาท)",
+             "เอกสารอ้างอิง", "เลขหน้า", "ชีตต้นฉบับ"]
+    widths2 = [14, 9, 8, 44, 26, 30, 50, 62, 16, 44, 8, 18]
+    rows2 = [[thai_year(r.get("FISCAL_YEAR")), to_num(r.get("FISCAL_YEAR")), r.get("water_scope", ""),
+              r.get("BUDGET_PLAN", ""), r.get("MINISTRY", ""), r.get("BUDGETARY_UNIT", ""),
+              r.get("PROJECT", ""), r.get("ITEM_DESCRIPTION", ""), to_num(r.get("AMOUNT")),
+              r.get("REF_DOC", ""), r.get("REF_PAGE_NO", ""), r.get("Source_Sheet", "")]
+             for r in detail_obliged]
+    ws = add_sheet("ภาระผูกพัน", cols2, rows2, widths=widths2, money_cols=[9], year_cols=[1, 2])
+    r0 = ws.max_row + 2
+    ws.cell(row=r0, column=1, value="คำเตือน: ตารางนี้คือ “ภาระผูกพันข้ามปี” ที่แนบมากับเอกสารแต่ละฉบับ "
+                                    "(สัญญาที่ผูกพันไว้แล้ว) — สัญญาเดียวกันปรากฏซ้ำในหลายฉบับ "
+                                    "ห้ามนำยอดนี้ไปรวมกับงบประมาณรายจ่ายรายปี").font = Font(
+        bold=True, color="C00000", size=11)
+
     wb.save(path)
-    print(f"  → {os.path.relpath(path, ROOT)}")
+    print(f"  → {os.path.relpath(path, ROOT)} ({len(wb.sheetnames)} ชีต: {', '.join(wb.sheetnames)})")
 
 
 def write_md_tables(path, detail_annual, detail_obliged, plan_year, scope_year, min_year,
