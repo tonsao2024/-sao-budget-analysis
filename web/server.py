@@ -8,10 +8,15 @@ Backend สำหรับเว็บวิเคราะห์งบประ
 import os
 import io
 import math
+import threading
 from datetime import datetime
+from functools import lru_cache
 
 import pandas as pd
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Query
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -37,23 +42,58 @@ for d in (_main, _comm):
     d["CROSS_FUNC?"] = d["CROSS_FUNC?"].map({"True": True, "1": True, "False": False, "0": False, "": False})
 _main["source"] = "main"
 _comm["source"] = "commitments"
-# คอลัมน์สำหรับค้นหาแบบ full-text (เติมให้ _main/_comm ก่อน concat เพื่อให้ทุก df มีใช้)
+# คอลัมน์สำหรับค้นหาแบบ full-text
 SEARCHABLE = ["MINISTRY", "BUDGETARY_UNIT", "ITEM_DESCRIPTION", "BUDGET_PLAN",
               "OUTPUT", "PROJECT", "STRATEGY", "MOTHER_PLAN"] + CATS
-for d in (_main, _comm):
-    d["_search"] = d[SEARCHABLE].fillna("").agg(" ".join, axis=1).str.lower()
 all_df = pd.concat([_main, _comm], ignore_index=True)
 main_df = _main
+
+# ดัชนีค้นหาสร้างแบบ lazy + vectorized (เดิมใช้ agg(" ".join, axis=1) = ~12 วิ ตอนบูต)
+_search_ready = False
+_search_lock = threading.Lock()
+
+
+def _build_search_col(d):
+    """ต่อข้อความทุกคอลัมน์ที่ค้นหาได้แบบ vectorized (เร็วกว่า agg(axis=1) ~4.5 เท่า)"""
+    s = d[SEARCHABLE[0]].fillna("").astype(str)
+    for c in SEARCHABLE[1:]:
+        s = s + " " + d[c].fillna("").astype(str)
+    return s.str.lower()
+
+
+def _ensure_search():
+    """สร้างคอลัมน์ _search ครั้งเดียว (เรียกจาก background ตอนบูต และจาก /api/search)"""
+    global _search_ready
+    if _search_ready:
+        return
+    with _search_lock:
+        if _search_ready:
+            return
+        for d in (_main, _comm):
+            d["_search"] = _build_search_col(d)
+        all_df["_search"] = pd.concat([_main["_search"], _comm["_search"]],
+                                      ignore_index=True)
+        _search_ready = True
+        print("✅ ดัชนีค้นหา (_search) พร้อมใช้งาน")
 print(f"✅ โหลดเสร็จ: ไฟล์หลัก {len(_main):,} แถว + ภาระผูกพัน {len(_comm):,} แถว = {len(all_df):,} แถว")
 
 # ---------------------------------------------------------------- helpers
+_CACHE_MAX = 128          # จำกัดจำนวนผลลัพธ์ที่แคชไว้ (กัน RAM โตไม่จำกัด)
 _cache = {}
+_cache_lock = threading.Lock()
 
 
 def cached(key, fn):
-    if key not in _cache:
-        _cache[key] = fn()
-    return _cache[key]
+    """แคชผลลัพธ์แบบ LRU อย่างง่าย"""
+    v = _cache.get(key)
+    if v is not None:
+        return v
+    v = fn()
+    with _cache_lock:
+        if len(_cache) >= _CACHE_MAX:
+            _cache.pop(next(iter(_cache)))   # ลบรายการเก่าสุด
+        _cache[key] = v
+    return v
 
 
 def clean(v):
@@ -98,8 +138,57 @@ META = {
 }
 
 # ---------------------------------------------------------------- app
-app = FastAPI(title="Thai Budget Analyzer 2566-2569")
+@asynccontextmanager
+async def _lifespan(_app):
+    """เริ่ม warm-up แบบ background ตอนเซิร์ฟเวอร์พร้อม (ไม่หน่วงการบูต)"""
+    threading.Thread(target=_warm_up, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Thai Budget Analyzer 2566-2569", lifespan=_lifespan)
+# บีบอัด JSON ทุก endpoint (ข้อความไทยบีบได้ ~8-10 เท่า → โหลดไกลเร็วขึ้นมาก)
+# compresslevel 6: ไฟล์ใหญ่บีบเร็วกว่า level 9 หลายเท่า (ขนาดต่างกันไม่ถึง 10%)
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+
+def _warm_up():
+    """เตรียมดัชนีค้นหา + ผลรวมที่ใช้บ่อยไว้ล่วงหน้าใน background (หน้าเว็บจะตอบทันที)
+
+    สำคัญ: ต้องเก็บแคชด้วย key เดียวกับที่ endpoint ใช้ ไม่งั้นจะคำนวณซ้ำโดยเปล่าประโยชน์
+    """
+    t0 = datetime.now()
+    try:
+        _ensure_search()
+    except Exception as e:      # pragma: no cover
+        print("⚠️ สร้างดัชนีค้นหาไม่สำเร็จ:", e)
+    for y in YEARS:
+        for key, fn in (
+            (("overview", y), lambda y=y: _overview(y)),
+            (("ministries", y), lambda y=y: _ministries(y)),
+            (("cat", y, ""), lambda y=y: _cat_nodes(y, "")),
+            (("plans", y, ""), lambda y=y: _plans(y, "")),
+        ):
+            try:
+                cached(key, fn)
+            except Exception:
+                pass
+    print(f"✅ warm-up เสร็จใน {(datetime.now() - t0).total_seconds():.1f} วิ "
+          f"(ดัชนีค้นหา + ภาพรวม/กระทรวง/หมวด/แผนงาน ทุกปี)")
+
+
+@app.middleware("http")
+async def _cache_headers(request, call_next):
+    """ตั้ง header แคช: ไฟล์ static/lib แคชยาว (เบราว์เซอร์ไม่โหลดซ้ำ), API ไม่แคช"""
+    resp = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/vendor/") or path.startswith("/static/fonts/"):
+        resp.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+    elif path.startswith("/static/"):
+        resp.headers.setdefault("Cache-Control", "public, max-age=86400")
+    elif path.startswith("/api/"):
+        resp.headers.setdefault("Cache-Control", "no-store")
+    return resp
 
 
 @app.get("/")
@@ -244,24 +333,37 @@ def search(q: str = "", years: str = "", ministry: str = "", cat1: str = "",
            obliged: bool = None, cross: bool = None, flagged: bool = False,
            source: str = "all", sort: str = "AMOUNT", order: str = "desc",
            page: int = 1, per_page: int = 50):
+    if q:
+        _ensure_search()          # สร้างดัชนีค้นหาครั้งแรกเมื่อจำเป็น (ไม่หน่วงตอนบูต)
     yrs = [int(y) for y in years.split(",") if y.strip().isdigit()] if years else []
     d = _apply_filters(q, yrs, ministry, cat1, plan, amt_min, amt_max,
                        obliged, cross, flagged, source)
     total = int(len(d))
+    total_sum = int(d["AMOUNT"].sum())
     sort_col = sort if sort in ("AMOUNT", "FISCAL_YEAR", "MINISTRY",
                                 "BUDGETARY_UNIT", "ITEM_DESCRIPTION") else "AMOUNT"
-    d = d.sort_values(sort_col, ascending=(order == "asc"),
-                      kind="mergesort", na_position="last")
     page = max(page, 1)
     per_page = min(max(per_page, 10), 200)
     start = (page - 1) * per_page
-    page_rows = d.iloc[start:start + per_page]
+    need = start + per_page
+    # ต้องการแค่บางส่วน → ใช้ nlargest/nsmallest (O(n)) แทนการ sort ทั้งชุด (O(n log n))
+    # (ใช้ได้กับคอลัมน์ตัวเลขเท่านั้น — คอลัมน์ข้อความ pandas ยังไม่รองรับ ต้อง sort ปกติ)
+    numeric_sort = d[sort_col].dtype.kind in "iufc"
+    if numeric_sort and need < total:
+        if order == "asc":
+            d = d.nsmallest(need, sort_col, keep="first")
+        else:
+            d = d.nlargest(need, sort_col, keep="first")
+    else:
+        d = d.sort_values(sort_col, ascending=(order == "asc"),
+                          kind="mergesort", na_position="last")
+    page_rows = d.iloc[start:need]
     return {
         "total": total,
         "page": page,
         "per_page": per_page,
         "pages": math.ceil(total / per_page) if per_page else 1,
-        "sum": int(d["AMOUNT"].sum()),
+        "sum": total_sum,
         "rows": rows_out(page_rows, SEARCH_COLS),
     }
 
@@ -278,11 +380,21 @@ def export(q: str = "", years: str = "", ministry: str = "", cat1: str = "",
                       ascending=(order == "asc"), kind="mergesort")
     d = d.head(100000)
     cols = [c for c in all_df.columns if c != "_search"]
-    buf = io.StringIO()
-    d[cols].to_csv(buf, index=False, encoding="utf-8-sig")
     fname = f"budget_export_{datetime.now():%Y%m%d_%H%M%S}.csv"
+    CHUNK = 5000
+
+    def gen():
+        """ส่ง CSV ทีละ 5,000 แถว — ไบต์แรกถึงผู้ใช้เร็ว และไม่กิน RAM ทั้งก้อน"""
+        first = True
+        for i in range(0, len(d), CHUNK):
+            buf = io.StringIO()
+            d.iloc[i:i + CHUNK][cols].to_csv(buf, index=False, header=first)
+            text = buf.getvalue()
+            yield ("\ufeff" + text) if first else text
+            first = False
+
     return StreamingResponse(
-        iter([buf.getvalue()]),
+        gen(),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename={fname}"})
 

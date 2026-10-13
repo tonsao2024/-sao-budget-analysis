@@ -822,6 +822,96 @@
     showBoot(0, 'เกิดข้อผิดพลาด: ' + msg + ' — กรุณารีเฟรชแล้วลองใหม่');
   }
 
+  /* ---------------- fast path: ไฟล์ columnar (เล็กกว่า CSV.gz 56%) ---------------- */
+  function rowsFromColumns(payload, source) {
+    const cols = payload.cols, data = payload.data, n = payload.rows;
+    if (cols && cols.length && !CSV_COLS.length) CSV_COLS = cols.slice();
+    const out = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const r = {};
+      for (let k = 0; k < cols.length; k++) {
+        const c = cols[k], cd = data[c];
+        if (cd.t === 'dict') r[c] = cd.v[cd.i[i]];
+        else if (cd.t === 'bool') r[c] = cd.v[i] === 1;
+        else r[c] = cd.t === 'num' ? Number(cd.v[i]) : cd.v[i];
+      }
+      r.source = source;
+      let s = '';
+      for (const c of SEARCHABLE) s += (r[c] || '') + ' ';
+      r._search = s.toLowerCase();
+      out[i] = r;
+    }
+    return out;
+  }
+
+  /* ---------------- ที่เก็บถาวรในเบราว์เซอร์ (IndexedDB) ----------------
+     เก็บข้อความ JSON ที่แกะ gzip แล้ว → เปิดครั้งต่อไปไม่ต้องโหลด/แกะซ้ำ */
+  const IDB_NAME = 'budget-th-2566-2569', IDB_STORE = 'files';
+  function idbOpen() {
+    return new Promise((resolve, reject) => {
+      if (!global.indexedDB) return reject(new Error('no-idb'));
+      const req = global.indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('idb-open-failed'));
+    });
+  }
+  async function idbGet(key) {
+    try {
+      const db = await idbOpen();
+      return await new Promise((resolve) => {
+        const tx = db.transaction(IDB_STORE, 'readonly');
+        const rq = tx.objectStore(IDB_STORE).get(key);
+        rq.onsuccess = () => resolve(rq.result || null);
+        rq.onerror = () => resolve(null);
+      });
+    } catch (e) { return null; }
+  }
+  async function idbPut(key, value) {
+    try {
+      const db = await idbOpen();
+      await new Promise((resolve) => {
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        const rq = tx.objectStore(IDB_STORE).put(value, key);
+        rq.onsuccess = () => resolve(true);
+        rq.onerror = () => resolve(false);
+      });
+    } catch (e) { /* โควต้าเต็ม/โหมดส่วนตัว → ข้ามได้ ไม่กระทบการทำงาน */ }
+  }
+
+  /* ดึงข้อความ JSON จาก IndexedDB ก่อน ถ้าไม่มีค่อยโหลดจากเครือข่ายแล้วเก็บไว้ */
+  async function fetchJsonCached(url, cacheKey, onProgress) {
+    const hit = await idbGet(cacheKey);
+    if (hit && hit.blob && hit.blob.size) {
+      if (onProgress) onProgress(hit.blob.size, hit.blob.size);
+      return await hit.blob.text();
+    }
+    const bytes = await fetchGzBytes(url, onProgress);
+    const ds = new DecompressionStream('gzip');
+    const text = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).text();
+    idbPut(cacheKey, { blob: new Blob([text], { type: 'application/json' }), savedAt: Date.now() });
+    return text;
+  }
+
+  async function fetchGzBytes(url, onProgress) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const total = Number(res.headers.get('content-length')) || 0;
+    const reader = res.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value); loaded += value.length;
+      if (onProgress) onProgress(loaded, total);
+    }
+    return new Blob(chunks);
+  }
+
   async function fetchGzText(url, onProgress) {
     const res = await fetch(url);
     if (!res.ok) throw new Error('โหลด ' + url + ' ไม่สำเร็จ (HTTP ' + res.status + ')');
@@ -854,14 +944,32 @@
           showBoot((base + loaded) / TOTAL_GZ * 88,
             'กำลังโหลดฐานข้อมูล… ' + ((base + loaded) / 1048576).toFixed(1) + ' / 13.0 MB');
         };
-        const t1 = await fetchGzText('data/budget_2566-2569_clean.csv.gz', prog(0));
-        done0 = 12486226;
-        showBoot(80, 'กำลังโหลดภาระผูกพัน (~1.2 MB)…');
-        const t2 = await fetchGzText('data/budget_2566-2569_commitments.csv.gz', prog(done0));
-        showBoot(92, 'กำลังประมวลผล 231,221 แถว…');
-        await tick();
-        const m = parseCSV(t1, 'main');
-        const c = parseCSV(t2, 'commitments');
+        // โหลดแบบ columnar (เล็ก/เร็ว/กิน RAM น้อยกว่า) — ถ้าไม่มีไฟล์จะถอยไปใช้ CSV.gz
+        let m, c;
+        try {
+          showBoot(4, 'กำลังโหลดฐานข้อมูล (แบบเร็ว 5.5 MB)…');
+          const j1 = await fetchJsonCached('data/main.cols.json.gz',
+            'cols:main:v1', prog(0));
+          done0 = 5537000;
+          showBoot(74, 'กำลังโหลดภาระผูกพัน…');
+          const j2 = await fetchJsonCached('data/comm.cols.json.gz',
+            'cols:comm:v1', prog(done0));
+          showBoot(88, 'กำลังประมวลผล 231,219 แถว…');
+          await tick();
+          m = rowsFromColumns(JSON.parse(j1), 'main');
+          c = rowsFromColumns(JSON.parse(j2), 'commitments');
+        } catch (eCols) {
+          console.warn('columnar ไม่พร้อม ใช้ CSV แทน:', eCols && eCols.message);
+          showBoot(6, 'กำลังโหลดฐานข้อมูล (ไฟล์หลัก ~12.5 MB)…');
+          const t1 = await fetchGzText('data/budget_2566-2569_clean.csv.gz', prog(0));
+          done0 = 12486226;
+          showBoot(80, 'กำลังโหลดภาระผูกพัน (~1.2 MB)…');
+          const t2 = await fetchGzText('data/budget_2566-2569_commitments.csv.gz', prog(done0));
+          showBoot(92, 'กำลังประมวลผล 231,219 แถว…');
+          await tick();
+          m = parseCSV(t1, 'main');
+          c = parseCSV(t2, 'commitments');
+        }
         setData(m, c);
         showBoot(100, 'พร้อมใช้งาน');
         await tick();
@@ -877,7 +985,7 @@
   /* ---------------- exports ---------------- */
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-      parseCSV, setData, buildMeta, localApi, DSX,
+      parseCSV, rowsFromColumns, setData, buildMeta, localApi, DSX,
       _get: () => ({ MAIN, COMM, ALL, META, CSV_COLS }),
     };
   } else {
