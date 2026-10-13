@@ -112,6 +112,17 @@ def main() -> None:
     for f in ("budget_2566-2569_clean.csv.gz", "budget_2566-2569_commitments.csv.gz"):
         shutil.copy2(os.path.join(ROOT, "output", f), os.path.join(DOCS, "data", f))
 
+    # --- 6b. ไฟล์ columnar (ทางเร็ว: เล็กกว่า 56% และเบราว์เซอร์ประกอบแถวเร็วกว่า ~3 เท่า) ---
+    #        ถ้าสร้างไม่สำเร็จ เว็บยังใช้ CSV.gz ที่คัดลอกไว้ข้างบนได้ตามปกติ
+    try:
+        import subprocess
+        r = subprocess.run([sys.executable, os.path.join(ROOT, "web", "build_columns.py")],
+                           capture_output=True, text=True)
+        print(r.stdout.strip() if r.returncode == 0 else
+              "⚠️ สร้างไฟล์ columnar ไม่สำเร็จ (เว็บจะใช้ CSV.gz แทน): " + r.stderr.strip()[-200:])
+    except Exception as e:
+        print("⚠️ สร้างไฟล์ columnar ไม่สำเร็จ (เว็บจะใช้ CSV.gz แทน):", e)
+
     # --- 7. .nojekyll ---
     open(os.path.join(DOCS, ".nojekyll"), "w").write("")
 
